@@ -1,164 +1,225 @@
 # -*- coding: utf-8 -*-
 
-# ==============================================================================
-# 1. METADADOS DO PYREVIT
-# Estas variáveis mágicas (__title__ e __docs__) são lidas pelo pyRevit 
-# ao carregar a extensão para definir o nome do botão e a dica (tooltip).
-# ==============================================================================
 __title__ = "Localizar/Substituir"
-__docs__ = "Encontra e substitui texto,vista e folhas em um arquivo de projeto aberto." \
-"Pesquisa por e substitui texto em notas de texto e grupos de detalhes."
+__docs__ = "Encontra e substitui texto, vistas e folhas usando uma interface avançada WPF."
 
-# ==============================================================================
-# 2. IMPORTAÇÕES DE BIBLIOTECAS
-# ==============================================================================
-# Importa todas as classes da API do Revit (View, TextNote, Transaction, etc.)
 from Autodesk.Revit.DB import * 
-# Importa utilitários do pyRevit para facilitar a criação de janelas (forms) e acesso ao modelo (revit)
 from pyrevit import revit, forms
-# Importa o módulo CLR (Common Language Runtime) do .NET para integrar Python com C#
 import clr
-clr.AddReference("System")
-from System.Collections.Generic import List
 import sys
+import re
+
+clr.AddReference("System")
+
+doc = __revit__.ActiveUIDocument.Document
 
 # ==============================================================================
-# 3. VARIÁVEIS DE CONTEXTO DO REVIT
-# Capturam o estado atual do software (o que está aberto na tela do usuário).
+# 1. CLASSES DE DADOS PARA A INTERFACE (BINDING)
 # ==============================================================================
-doc = __revit__.ActiveUIDocument.Document # O banco de dados do projeto ativo
-uidoc = __revit__.ActiveUIDocument        # A interface de usuário do projeto ativo
-app = __revit__.Application               # A instância do aplicativo Revit
-
-# Importa componentes específicos para montar a janela (interface gráfica) inicial
-from rpw.ui.forms import (FlexForm, Label, TextBox, ComboBox, Separator, Button)
-
-# ==============================================================================
-# 4. CLASSE AUXILIAR (WRAPPER)
-# Criamos esta classe para que a lista de seleção do pyRevit (SelectFromList) 
-# mostre um texto amigável (preview) em vez do nome padrão de sistema do objeto.
-# O pyRevit sempre procura a propriedade 'name' para exibir na tela.
-# ==============================================================================
-class ElementoParaRenomear(object):
-    def __init__(self, element, preview):
-        self.element = element # Armazena o elemento real do Revit (Vista, Folha, etc.)
-        self.name = preview    # Armazena o texto formatado que será mostrado na janela
-
-# ==============================================================================
-# 5. CONSTRUÇÃO DA INTERFACE DO USUÁRIO (FORMULÁRIO INICIAL)
-# Define os campos da primeira janela com a qual o usuário vai interagir.
-# ==============================================================================
-components = [
-    Label('Parâmetro:'), 
-    # O ComboBox recebe um dicionário. As chaves (ex: '1. Vistas') são os textos 
-    # exibidos ao usuário, e os valores (ex: View) são as Classes reais da API do Revit.
-    ComboBox('target', {
-            '1. Nome de Vistas': View,        
-            '2. Nome de Folhas': ViewSheet,   
-            '3. Notas de Textos': TextNote     
-        }),
-    Separator(),
-    Label('Localizar (Texto atual):'), TextBox('txt_find'),
-    Label('Substituir por (Novo texto):'), TextBox('txt_replace'),
-    Separator(), 
-    Button('Buscar Correspondências')
-]
-
-# Cria e exibe a janela na tela
-form = FlexForm('Padrão de Nomenclatura', components)
-form.show()
-
-# Se o usuário fechar a janela no 'X' (cancelar), form.values fica vazio e o script encerra aqui
-if not form.values:
-    sys.exit()
-
-# Coleta os valores que o usuário digitou/selecionou na janela
-find_str = form.values.get('txt_find')
-replace_str = form.values.get('txt_replace')
-target = form.values.get('target') # Aqui 'target' carrega a classe do Revit (View, ViewSheet ou TextNote)
-
-# Validações básicas de preenchimento
-if not find_str:
-    forms.alert("O campo 'Localizar' não pode estar vazio.", exitscript=True)
-# Se o campo de substituição não foi preenchido, assume uma string vazia (apaga o texto encontrado)
-if replace_str is None:
-    replace_str = "" 
-
-# ==============================================================================
-# 6. BUSCA NO BANCO DE DADOS DO REVIT
-# O FilteredElementCollector varre todo o modelo.
-# '.OfClass(target)' restringe a busca apenas à classe escolhida (Ex: só pega Vistas).
-# '.WhereElementIsNotElementType()' garante que pegamos o elemento em si, não sua família/tipo.
-# ==============================================================================
-elements_to_process = FilteredElementCollector(doc).OfClass(target).WhereElementIsNotElementType().ToElements()
-
-# Lista vazia que vai guardar apenas os elementos que contêm o texto que estamos procurando
-matches = [] 
-
-# ==============================================================================
-# 7. FILTRAGEM E PREPARAÇÃO DA PRÉ-VISUALIZAÇÃO
-# ==============================================================================
-for el in elements_to_process:
-    try:
-        # Se o elemento tiver a propriedade 'Text' (como um texto simples no Revit), nós a usamos.
-        # Caso contrário (como Vistas ou Folhas), nós usamos a propriedade 'Name'.
-        current_text = el.Text if hasattr(el, "Text") else el.Name
+class ElementoItem(object):
+    def __init__(self, element):
+        self.element = element
+        self.IsSelected = False
         
-        # Verifica se o que o usuário quer localizar (find_str) existe no nome/texto deste elemento
-        if find_str in current_text:
-            # Cria a string de visualização: "Texto Antigo  -->  Texto Novo"
-            preview = "{}  -->  {}".format(current_text, current_text.replace(find_str, replace_str))
-            
-            # Empacota o elemento e o texto de preview na nossa classe auxiliar, e joga na lista
-            matches.append(ElementoParaRenomear(el, preview))
-    except:
-        # Se ocorrer algum erro ao tentar ler um elemento específico, apenas ignora e passa para o próximo
-        pass
-
-# Se a lista terminou vazia (nada encontrado), avisa o usuário e aborta o script
-if not matches:
-    forms.alert('Nenhuma correspondência encontrada para "{}" no escopo selecionado.'.format(find_str), exitscript=True)
-
-# ==============================================================================
-# 8. JANELA DE CONFIRMAÇÃO (CHECKBOX)
-# Abre uma segunda janela nativa do pyRevit que lista os resultados encontrados.
-# O usuário pode desmarcar aquilo que não quer que seja renomeado.
-# ==============================================================================
-elementos_confirmados = forms.SelectFromList.show(
-    matches,
-    title='Selecione os itens para confirmar a substituição',
-    button_name='Substituir Marcados',
-    multiselect=True
-)
-
-# Se o usuário cancelar essa janela, encerramos a rotina sem fazer nenhuma alteração
-if not elementos_confirmados:
-    sys.exit() 
-
-# ==============================================================================
-# 9. ALTERAÇÃO NO MODELO (TRANSAÇÃO)
-# Qualquer alteração (escrita) no Revit DEVE acontecer dentro de uma Transaction.
-# Isso garante a integridade do arquivo e cria o histórico de Desfazer (Ctrl+Z).
-# ==============================================================================
-t = Transaction(doc, 'OmniBIM - Localizar/Substituir')
-t.Start() # Inicia a edição do arquivo
-
-# Percorre os itens que o usuário confirmou na janela de listagem
-for item in elementos_confirmados:
-    el = item.element # Extraímos o elemento real do Revit de dentro do nosso Wrapper
-    try:
-        # Executa a substituição final de acordo com o tipo do elemento
-        if isinstance(el, TextNote):
-            el.Text = el.Text.replace(find_str, replace_str)
+        self.ViewName = element.Text if hasattr(element, "Text") else element.Name
+        
+        # Traduz os tipos internos da API do Revit para a interface do utilizador
+        if isinstance(element, TextNote):
+            self.ViewType = "Nota de Texto"
+        elif isinstance(element, ViewSheet):
+            self.ViewType = "Folha"
+        elif isinstance(element, ViewSchedule):
+            self.ViewType = "Tabela"
         else:
-            el.Name = el.Name.replace(find_str, replace_str)
-    except Exception as e:
-        # Se falhar (exemplo: tentar colocar um nome que já existe em outra vista), 
-        # imprime o erro no console do pyRevit, mas continua o loop para os demais itens.
-        print("Erro ao renomear o elemento {}: {}".format(el.Id, e))
+            vt = element.ViewType
+            if vt == ViewType.FloorPlan: self.ViewType = "Planta de Piso"
+            elif vt == ViewType.CeilingPlan: self.ViewType = "Planta de Teto"
+            elif vt == ViewType.EngineeringPlan: self.ViewType = "Planta Estrutural"
+            elif vt == ViewType.AreaPlan: self.ViewType = "Planta de Área"
+            elif vt == ViewType.ThreeD: self.ViewType = "Vista 3D"
+            elif vt == ViewType.Elevation: self.ViewType = "Elevação"
+            elif vt == ViewType.Section: self.ViewType = "Corte"
+            elif vt == ViewType.DraftingView: self.ViewType = "Vista de Desenho"
+            elif vt == ViewType.Legend: self.ViewType = "Legenda"
+            else: self.ViewType = str(vt)
 
-# Confirma, salva e encerra a edição
-t.Commit()
+class PreviewItem(object):
+    def __init__(self, current_name, new_name):
+        self.CurrentName = current_name
+        self.NewName = new_name
 
-# Mensagem visual de encerramento para tranquilizar o usuário
-forms.alert("Processo Concluído!")
+# ==============================================================================
+# 2. CLASSE PRINCIPAL DA JANELA (INTERFACE GRÁFICA)
+# ==============================================================================
+class JanelaLocalizarSubstituir(forms.WPFWindow):
+    def __init__(self, xaml_file_name):
+        forms.WPFWindow.__init__(self, xaml_file_name)
+        
+        self.lista_elementos = [] 
+        
+        self.cbViewTypes.SelectionChanged += self.carregar_elementos
+        
+        self.tbFind.TextChanged += self.atualizar_tudo
+        self.tbReplace.TextChanged += self.atualizar_preview
+            
+        self.btnSelectAll.Click += self.selecionar_tudo
+        self.btnSelectNone.Click += self.limpar_selecao
+        self.btnCancel.Click += self.fechar_janela
+        self.btnRename.Click += self.executar_renomear
+        
+        self.carregar_elementos(None, None)
+
+    # -------------------------------------------------------------------------
+    # MÉTODOS DE LÓGICA E INTERFACE
+    # -------------------------------------------------------------------------
+    def AoClicarCheckbox(self, sender, args):
+        self.atualizar_preview(None, None)
+
+    def atualizar_tudo(self, sender, args):
+        self.filtrar_lista_esquerda(None, None)
+        self.atualizar_preview(None, None)
+
+    def carregar_elementos(self, sender, args):
+        idx = self.cbViewTypes.SelectedIndex
+        self.lista_elementos = []
+        
+        # Índices do ComboBox conforme o ui.xaml:
+        # 0: Todos os Tipos
+        # 1: Notas de Texto
+        # 2: Plantas 2D
+        # 3: Vistas 3D
+        # 4: Outras Vistas
+        # 5: Tabelas
+        # 6: Folhas
+        
+        # 1. NOTAS DE TEXTO
+        if idx in [0, 1]:
+            for el in FilteredElementCollector(doc).OfClass(TextNote).WhereElementIsNotElementType().ToElements():
+                self.lista_elementos.append(ElementoItem(el))
+
+        # 2. PLANTAS 2D, VISTAS 3D, OUTRAS VISTAS
+        if idx in [0, 2, 3, 4]:
+            for el in FilteredElementCollector(doc).OfClass(View).WhereElementIsNotElementType().ToElements():
+                if el.IsTemplate or isinstance(el, ViewSheet) or isinstance(el, ViewSchedule):
+                    continue
+                
+                vt = el.ViewType
+                is_planta = vt in [ViewType.FloorPlan, ViewType.CeilingPlan, ViewType.EngineeringPlan, ViewType.AreaPlan]
+                is_3d = (vt == ViewType.ThreeD)
+                
+                if idx == 0:
+                    self.lista_elementos.append(ElementoItem(el))
+                elif idx == 2 and is_planta:
+                    self.lista_elementos.append(ElementoItem(el))
+                elif idx == 3 and is_3d:
+                    self.lista_elementos.append(ElementoItem(el))
+                elif idx == 4 and not is_planta and not is_3d:
+                    self.lista_elementos.append(ElementoItem(el))
+
+        # 3. TABELAS
+        if idx in [0, 5]:
+            for el in FilteredElementCollector(doc).OfClass(ViewSchedule).WhereElementIsNotElementType().ToElements():
+                if not el.IsTemplate:
+                    self.lista_elementos.append(ElementoItem(el))
+                    
+        # 4. FOLHAS
+        if idx in [0, 6]:
+            for el in FilteredElementCollector(doc).OfClass(ViewSheet).WhereElementIsNotElementType().ToElements():
+                self.lista_elementos.append(ElementoItem(el))
+        
+        self.filtrar_lista_esquerda(None, None)
+
+    def filtrar_lista_esquerda(self, sender, args):
+        texto_localizar = self.tbFind.Text.lower()
+        
+        if not texto_localizar:
+            self.lbViews.ItemsSource = self.lista_elementos
+            self.lblSelectedCount.Text = "{} carregados".format(len(self.lista_elementos))
+        else:
+            lista_filtrada = [item for item in self.lista_elementos if texto_localizar in item.ViewName.lower()]
+            self.lbViews.ItemsSource = lista_filtrada
+            self.lblSelectedCount.Text = "{} filtrados".format(len(lista_filtrada))
+
+    def atualizar_preview(self, sender, args):
+        find_str = self.tbFind.Text
+        replace_str = self.tbReplace.Text
+        lista_preview = []
+        
+        if find_str: 
+            padrao = re.compile(re.escape(find_str), re.IGNORECASE)
+            
+            for item in self.lista_elementos:
+                if item.IsSelected and padrao.search(item.ViewName):
+                    novo_nome = padrao.sub(replace_str, item.ViewName)
+                    lista_preview.append(PreviewItem(item.ViewName, novo_nome))
+        
+        self.lbPreview.ItemsSource = lista_preview
+        self.lblPreviewCount.Text = "{} correspondências".format(len(lista_preview))
+
+    def selecionar_tudo(self, sender, args):
+        itens_visiveis = self.lbViews.ItemsSource
+        if itens_visiveis:
+            for item in itens_visiveis:
+                item.IsSelected = True
+            self.lbViews.Items.Refresh()
+            self.atualizar_preview(None, None)
+
+    def limpar_selecao(self, sender, args):
+        itens_visiveis = self.lbViews.ItemsSource
+        if itens_visiveis:
+            for item in itens_visiveis:
+                item.IsSelected = False
+            self.lbViews.Items.Refresh()
+            self.atualizar_preview(None, None)
+
+    def fechar_janela(self, sender, args):
+        self.Close()
+
+    # -------------------------------------------------------------------------
+    # MÉTODO PRINCIPAL: TRANSAÇÃO NO REVIT
+    # -------------------------------------------------------------------------
+    def executar_renomear(self, sender, args):
+        find_str = self.tbFind.Text
+        replace_str = self.tbReplace.Text
+        
+        if not find_str:
+            forms.alert("O campo 'Localizar' não pode estar vazio.")
+            return
+            
+        padrao = re.compile(re.escape(find_str), re.IGNORECASE)
+        
+        itens_para_processar = [item for item in self.lista_elementos if item.IsSelected and padrao.search(item.ViewName)]
+        
+        if not itens_para_processar:
+            forms.alert("Nenhum item marcado contém o texto procurado.")
+            return
+
+        t = Transaction(doc, 'OmniBIM - Localizar/Substituir')
+        t.Start()
+        
+        sucessos = 0
+        for item in itens_para_processar:
+            el = item.element
+            try:
+                novo_nome_final = padrao.sub(replace_str, item.ViewName)
+                
+                if isinstance(el, TextNote):
+                    el.Text = novo_nome_final
+                else:
+                    el.Name = novo_nome_final
+                sucessos += 1
+            except Exception as e:
+                print("Erro ao renomear o elemento {}: {}".format(el.Id, e))
+                
+        t.Commit()
+        
+        self.Close()
+        forms.alert("Processo Concluído!\n{} itens renomeados com sucesso.".format(sucessos))
+
+# ==============================================================================
+# 3. INICIALIZAÇÃO
+# ==============================================================================
+try:
+    JanelaLocalizarSubstituir('ui.xaml').ShowDialog()
+except Exception as ex:
+    forms.alert("Erro ao carregar a interface XAML: {}".format(ex))
