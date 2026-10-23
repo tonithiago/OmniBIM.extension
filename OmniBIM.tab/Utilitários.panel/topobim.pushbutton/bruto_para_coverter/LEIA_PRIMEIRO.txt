@@ -1,0 +1,16 @@
+TOPOBIM para Revit 2026
+
+1. Extraia TODO o ZIP em uma pasta local com permissao de escrita.
+2. Feche o Revit e execute INSTALAR_REVIT_2026.cmd.
+3. Aguarde o download do SDK oficial e a compilacao. A instalacao pode demorar varios minutos.
+4. Abra o Revit 2026 e procure TOPOBIM.
+
+Requer Windows, Revit 2026 completo instalado e internet. Nao precisa executar como administrador para a instalacao padrao no perfil do usuario. O script libera a execucao somente nesse processo do PowerShell.
+
+O pacote contem o codigo-fonte atual. Ele sera compilado com as bibliotecas locais do Revit 2026; a execucao nessa versao ainda precisa ser validada. Nao use a DLL instalada para Revit 2025.
+
+Leia o Manual_TOPOBIM.pdf antes de usar. Em caso de falha, envie instalacao.log.
+
+Para desativar, com Revit fechado, execute no PowerShell:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Desinstalar.ps1 -RevitVersion 2026
+
