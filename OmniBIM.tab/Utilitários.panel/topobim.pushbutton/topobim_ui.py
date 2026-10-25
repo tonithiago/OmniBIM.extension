@@ -5,7 +5,8 @@ from __future__ import division, unicode_literals
 import math
 import os
 import codecs
-from System import Int64, Uri
+from xml.dom import minidom
+from System import Int64
 from System.Collections.Generic import List
 from System.Windows import Visibility, Point, RoutedEventHandler, SystemParameters
 from System.Windows.Controls import Canvas, TextBlock, ComboBox, CheckBox, SelectionChangedEventHandler
@@ -26,11 +27,22 @@ HERE = os.path.dirname(__file__)
 
 
 def window_xaml(filename):
-    # Load shared resources relative to this bundle, independent of Revit's cwd.
+    # Populate the existing Window.Resources collection. An explicit dictionary
+    # replaces pyRevit's palette, breaking its post-load contrast setup.
     with codecs.open(os.path.join(HERE, filename), 'r', 'utf-8') as stream:
-        source = stream.read()
-    return source.replace('Source="TopoBimTheme.xaml"',
-                          'Source="{0}"'.format(Uri(os.path.join(HERE, 'TopoBimTheme.xaml')).AbsoluteUri))
+        window = minidom.parseString(stream.read().encode('utf-8'))
+    theme = minidom.parse(os.path.join(HERE, 'TopoBimTheme.xaml'))
+    try:
+        resources = window.getElementsByTagName('Window.Resources')[0]
+        for child in list(resources.childNodes):
+            resources.removeChild(child)
+            child.unlink()
+        for child in theme.documentElement.childNodes:
+            resources.appendChild(window.importNode(child, True))
+        return window.toxml()
+    finally:
+        theme.unlink()
+        window.unlink()
 
 
 def fit_work_area(window):

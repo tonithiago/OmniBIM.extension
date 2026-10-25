@@ -35,7 +35,15 @@ class Record(object):
 
 class WPFWindow(Window):
     def __init__(self, path, literal_string=False):
+        # pyRevit seeds its palette before loading the button's XAML. Keep the
+        # same dictionary: its contrast pass later reads these brushes.
+        resources = self.Resources
+        resources['pyRevitWindowForegroundBrush'] = Brushes.Black
+        resources['pyRevitWindowBackgroundBrush'] = Brushes.White
         wpf.LoadComponent(self, StringReader(path) if literal_string else path)
+        assert self.Resources is resources
+        assert self.Resources['pyRevitWindowForegroundBrush'] == Brushes.Black
+        assert self.Resources['pyRevitWindowBackgroundBrush'] == Brushes.White
 
 
 def alert(message, **kwargs):
