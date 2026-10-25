@@ -1,0 +1,30 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TOPOBIM — Ocorrências" Width="950" Height="550" MinWidth="650" MinHeight="350"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="{DynamicResource PageBrush}" Foreground="{DynamicResource TextBrush}" FontFamily="Segoe UI" FontSize="12" UseLayoutRounding="True" SnapsToDevicePixels="True">
+  <Window.Resources>
+    <ResourceDictionary><ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary Source="TopoBimTheme.xaml"/>
+    </ResourceDictionary.MergedDictionaries></ResourceDictionary>
+  </Window.Resources>
+  <DockPanel Margin="24" Background="{StaticResource PageBrush}">
+    <TextBlock DockPanel.Dock="Top" Margin="0,0,0,12" TextWrapping="Wrap"
+               Text="Erros de leitura ou geometria bloqueiam a criação. Diferenças de cota são avisos: a primeira cota é mantida."/>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,12,0,0">
+      <Button x:Name="Export" Content="Exportar CSV" Padding="12,7" Margin="0,0,8,0"/>
+      <Button x:Name="Reload" Content="Reler origem" Padding="12,7" Margin="0,0,8,0"/>
+      <Button x:Name="CloseButton" Content="Fechar" Padding="16,8" Style="{StaticResource PrimaryButton}"/>
+    </StackPanel>
+    <DataGrid x:Name="Table" IsReadOnly="True" AutoGenerateColumns="False"
+              CanUserAddRows="False" CanUserDeleteRows="False" EnableRowVirtualization="True"
+              HeadersVisibility="Column" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <DataGrid.Resources><Style x:Key="WrappedCell" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="5"/></Style></DataGrid.Resources>
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Nº" Binding="{Binding Numero}" Width="50" ElementStyle="{StaticResource WrappedCell}"/>
+        <DataGridTextColumn Header="Tipo" Binding="{Binding Tipo}" Width="130" ElementStyle="{StaticResource WrappedCell}"/>
+        <DataGridTextColumn Header="Detalhe" Binding="{Binding Detalhe}" Width="*" ElementStyle="{StaticResource WrappedCell}"/>
+        <DataGridTextColumn Header="Orientação" Binding="{Binding Orientacao}" Width="*" ElementStyle="{StaticResource WrappedCell}"/>
+      </DataGrid.Columns>
+    </DataGrid>
+  </DockPanel>
+</Window>

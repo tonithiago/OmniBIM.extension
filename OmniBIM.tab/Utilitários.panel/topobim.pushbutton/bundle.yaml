@@ -1,0 +1,11 @@
+title: TopoBim
+tooltip: >-
+  Importe pontos CSV/TXT ou leia camadas de um DWG do projeto,
+  confira o levantamento e crie um sólido topográfico georreferenciado.
+  Exclusivo para Revit 2026.
+min_revit_version: 2026
+max_revit_version: 2026
+context: doc-project
+engine:
+  clean: true
+  persistent: false

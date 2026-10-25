@@ -1,0 +1,231 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TOPOBIM 0.8.3 — Revit 2026" Width="1100" Height="860" MinWidth="800" MinHeight="600"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Background="{DynamicResource PageBrush}" Foreground="{DynamicResource TextBrush}" FontFamily="Segoe UI" FontSize="12" UseLayoutRounding="True" SnapsToDevicePixels="True">
+  <Window.Resources>
+    <ResourceDictionary><ResourceDictionary.MergedDictionaries>
+      <ResourceDictionary Source="TopoBimTheme.xaml"/>
+    </ResourceDictionary.MergedDictionaries></ResourceDictionary>
+  </Window.Resources>
+  <DockPanel Margin="24" Background="{StaticResource PageBrush}">
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock Text="TOPOBIM" FontSize="26" FontWeight="SemiBold" Margin="0,0,0,8"/>
+      <TextBlock Text="Topografia e georreferenciamento" FontSize="13" Margin="0" Foreground="{StaticResource SecondaryBrush}"/>
+    </StackPanel>
+    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,16,0,0">
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="Status" Text="Selecione a origem do levantamento." Foreground="{StaticResource SecondaryBrush}" Margin="0,0,16,0" VerticalAlignment="Center"/>
+        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" VerticalAlignment="Center">
+          <Button x:Name="ViewCreated" Content="Ver pisos em 3D" Visibility="Collapsed"/>
+          <Button x:Name="SaveReport" Content="Salvar relatório JSON" Visibility="Collapsed"/>
+        </WrapPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button x:Name="Back" Content="Voltar" MinWidth="96" IsEnabled="False"/>
+          <Button x:Name="Next" Content="Continuar" MinWidth="112" Margin="0,4,0,4" Style="{StaticResource PrimaryButton}"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+    <TabControl x:Name="Tabs" Margin="0,16,0,0">
+      <TabItem Header="1. Entrada" x:Name="InputTab">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,8"><StackPanel Margin="16">
+          <TextBlock Text="Origem do levantamento" FontWeight="SemiBold"/>
+          <ComboBox x:Name="SourceMode" SelectedIndex="0"><ComboBoxItem Content="Arquivo CSV / TXT"/><ComboBoxItem Content="DWG presente no projeto"/></ComboBox>
+          <StackPanel x:Name="CsvPanel">
+            <Button x:Name="ChooseFile" Content="Selecionar CSV / TXT" HorizontalAlignment="Left"/>
+            <TextBlock x:Name="FileLabel" Text="Nenhum arquivo selecionado."/>
+            <UniformGrid Columns="3">
+              <StackPanel><TextBlock Text="Separador"/><ComboBox x:Name="Separator" SelectedIndex="0"><ComboBoxItem Content="Ponto e vírgula (;)"/><ComboBoxItem Content="Vírgula (,)"/><ComboBoxItem Content="Tabulação"/></ComboBox></StackPanel>
+              <StackPanel><TextBlock Text="Unidade"/><ComboBox x:Name="Units" SelectedIndex="0"><ComboBoxItem Content="Metros"/><ComboBoxItem Content="Centímetros"/><ComboBoxItem Content="Milímetros"/><ComboBoxItem Content="Pés"/></ComboBox></StackPanel>
+              <CheckBox x:Name="Header" Content="Contém cabeçalho" IsChecked="True" VerticalAlignment="Center"/>
+            </UniformGrid>
+            <UniformGrid Columns="3">
+              <StackPanel><TextBlock Text="Coluna Este (X)"/><TextBox x:Name="EastColumn" Text="1"/></StackPanel>
+              <StackPanel><TextBlock Text="Coluna Norte (Y)"/><TextBox x:Name="NorthColumn" Text="2"/></StackPanel>
+              <StackPanel><TextBlock Text="Coluna Elevação (Z)"/><TextBox x:Name="ZColumn" Text="3"/></StackPanel>
+            </UniformGrid>
+            <TextBlock Text="Colunas começam em 1. Decimal com vírgula exige separador ; ou tabulação. Não use separadores de milhar. Arquivo em UTF-8." Foreground="{StaticResource SecondaryBrush}"/>
+          </StackPanel>
+          <StackPanel x:Name="CadPanel" Visibility="Collapsed">
+            <TextBlock Text="Vincule ou importe o DWG no projeto antes de abrir o TOPOBIM, sem restringi-lo à vista atual."/>
+            <ComboBox x:Name="CadFiles" DisplayMemberPath="Label"/>
+            <TextBlock Text="Coordenadas do DWG"/>
+            <ComboBox x:Name="CadCoordinates" SelectedIndex="0"><ComboBoxItem Content="Originais do levantamento (WCS)"/><ComboBoxItem Content="Posição atual / compartilhadas do Revit"/></ComboBox>
+            <TextBlock Text="Lê curvas, polilinhas, pontos e malhas. Textos de cotas e proxies Civil 3D não são interpretados." Foreground="{StaticResource SecondaryBrush}"/>
+          </StackPanel>
+          <Button x:Name="ReadSource" Content="Ler e conferir" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+      <TabItem Header="2. Conferência" x:Name="ReviewTab">
+        <ScrollViewer x:Name="ReviewScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,8"><StackPanel Margin="16">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="65*"/><ColumnDefinition Width="35*"/></Grid.ColumnDefinitions>
+            <Grid Margin="0,0,0,8">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock Text="Visualização do terreno" FontSize="14" FontWeight="SemiBold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ComboBox x:Name="PreviewMode" Width="120" Margin="0,0,8,0" SelectedIndex="0" ToolTip="Escolha como navegar pelo terreno">
+                  <ComboBoxItem Content="Planta"/><ComboBoxItem Content="Modelo 3D"/>
+                </ComboBox>
+                <Button x:Name="Fit" Content="Enquadrar" Padding="8,4" Margin="0"/>
+              </StackPanel>
+            </Grid>
+            <TextBlock Grid.Column="1" Text="Dados do levantamento" FontWeight="SemiBold" VerticalAlignment="Bottom" Margin="16,0,0,8"/>
+            <StackPanel Grid.Row="1">
+              <Border CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Background="{StaticResource ViewportBrush}" Padding="1"><Grid x:Name="PreviewHost" Height="285" Background="{StaticResource ViewportBrush}" ClipToBounds="True" Cursor="Hand">
+                <Canvas x:Name="Preview" Background="{StaticResource ViewportBrush}" ClipToBounds="True" IsHitTestVisible="False"/>
+                <Viewport3D x:Name="TerrainViewport" Visibility="Collapsed" IsHitTestVisible="False"/>
+                <Canvas x:Name="MeasureOverlay" IsHitTestVisible="False" ClipToBounds="True"/>
+                <TextBlock x:Name="ViewLabel" Text="3D · escala real" Foreground="{StaticResource MarkerBrush}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" Visibility="Collapsed" IsHitTestVisible="False"/>
+                <TextBlock x:Name="MeasurePrompt" Text="{Binding Text, ElementName=MeasureStatus}" Foreground="{StaticResource MarkerBrush}" Background="{StaticResource OverlayBrush}" Padding="6" Margin="8" VerticalAlignment="Bottom" Visibility="Collapsed" IsHitTestVisible="False"/>
+              </Grid>
+              </Border>
+              <TextBlock x:Name="PreviewHint" Text="Planta E/N · roda: zoom · arraste: mover · duplo clique: enquadrar" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,8,0,0"/>
+              <TextBlock x:Name="PreviewNote" Visibility="Collapsed" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,0,0,6"/>
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="16,0,0,0">
+              <UniformGrid Columns="2" Rows="3" Height="289" Margin="0,0,-8,-8">
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Pontos únicos" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="UniquePointsValue" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Duplicados removidos" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="DuplicatesValue" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Extensão E × N" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="ExtentValue" Text="—" FontSize="13" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Desnível" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="ReliefValue" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Cota mínima" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="MinElevationValue" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+                <Border Style="{StaticResource MetricCell}"><StackPanel>
+                  <TextBlock Text="Cota máxima" Style="{StaticResource MetricTitle}"/>
+                  <TextBlock x:Name="MaxElevationValue" Text="—" Style="{StaticResource MetricValue}"/>
+                </StackPanel></Border>
+              </UniformGrid>
+              <StackPanel x:Name="LayerPanel" Visibility="Collapsed">
+                <TextBlock Text="Camadas de origem" FontWeight="SemiBold"/>
+                <ListBox x:Name="Layers" SelectionMode="Multiple" Height="150">
+                  <ListBox.ItemTemplate><DataTemplate><CheckBox Content="{Binding}" Margin="2" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+                <Button x:Name="ApplyLayers" Content="Aplicar camadas selecionadas"/>
+              </StackPanel>
+            </StackPanel>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Margin="0,16,0,8">
+            <TextBlock Text="Aferições do terreno" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,4,16,4"/>
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="MeasureNavigate" Content="Navegar" Padding="8,5"/>
+              <Button x:Name="MeasureUndo" Content="Desfazer ponto" Padding="8,5"/>
+              <Button x:Name="MeasureClear" Content="Limpar" Padding="8,5" Margin="0,4,0,4"/>
+            </StackPanel>
+          </StackPanel>
+          <UniformGrid Columns="3" MaxWidth="720" HorizontalAlignment="Left" Margin="0,0,-8,0">
+            <Border x:Name="DistanceCell" Style="{StaticResource MetricCell}" Padding="8"><StackPanel>
+              <TextBlock Text="Distância" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,2"/>
+              <TextBlock x:Name="DistanceValue" Text="— m" FontSize="16" Style="{StaticResource MetricValue}"/>
+              <TextBlock x:Name="DistanceDetail" Text="Horizontal em planta (E/N)" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,3"/>
+              <Button x:Name="MeasureDistance" Content="Medir distância" FontSize="11" Padding="6,3" Margin="0,2,0,0"/>
+            </StackPanel></Border>
+            <Border x:Name="AreaCell" Style="{StaticResource MetricCell}" Padding="8"><StackPanel>
+              <TextBlock Text="Área" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,2"/>
+              <TextBlock x:Name="AreaValue" Text="— m²" FontSize="16" Style="{StaticResource MetricValue}"/>
+              <TextBlock Text="Projeção horizontal (E/N)" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,3"/>
+              <UniformGrid Columns="2">
+                <Button x:Name="MeasureArea" Content="Marcar área" FontSize="11" Padding="4,3" Margin="0,2,4,0"/>
+                <Button x:Name="FinishArea" Content="Concluir área" FontSize="11" Padding="4,3" Margin="0,2,0,0"/>
+              </UniformGrid>
+            </StackPanel></Border>
+            <Border x:Name="LevelCell" Style="{StaticResource MetricCell}" Padding="8"><StackPanel>
+              <TextBlock Text="Cota de nível" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,2"/>
+              <TextBlock x:Name="LevelValue" Text="— m" FontSize="16" Style="{StaticResource MetricValue}"/>
+              <TextBlock Text="Z original do vértice" Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,2,0,3"/>
+              <Button x:Name="MeasureLevel" Content="Consultar cota" FontSize="11" Padding="6,3" Margin="0,2,0,0"/>
+            </StackPanel></Border>
+          </UniformGrid>
+          <TextBlock x:Name="MeasureStatus" Foreground="{StaticResource TextBrush}" Margin="0,4,0,4"/>
+          <TextBlock Text="Aferições 2D pelas coordenadas originais dos vértices, sem interpolação. Passe o cursor sobre o resultado para ver mais casas decimais. A exatidão depende do levantamento de origem." Foreground="{StaticResource SecondaryBrush}" FontSize="11" Margin="0,0,0,8"/>
+          <Border Background="{StaticResource PageBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="8" Margin="0,8,0,8">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock x:Name="Quality" Text="Aguardando leitura." FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,16,0"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="ReviewIssues" Content="Revisar ocorrências" Padding="8,4"/><Button x:Name="Reload" Content="Reler origem" Padding="8,4" Margin="0,4,0,4"/></StackPanel>
+            </Grid>
+          </Border>
+          <TextBlock Text="Limite convexo: divisas côncavas, furos, linhas de quebra e triangulação original não são preservados." Foreground="{StaticResource SecondaryBrush}"/>
+          <CheckBox x:Name="CreateFloors" Content="Criar pisos nas áreas fechadas do DWG junto com o terreno" FontWeight="SemiBold"/>
+          <StackPanel x:Name="FloorPanel" Visibility="Collapsed">
+            <TextBlock Text="Selecione o DWG das áreas de piso. Os contornos podem ser côncavos e conter furos. Marque apenas os layers que representam pisos."/>
+            <ComboBox x:Name="FloorCad" DisplayMemberPath="Label"/>
+            <ComboBox x:Name="FloorCoordinates" SelectedIndex="2"><ComboBoxItem Content="Manual: WCS original compatível com o levantamento"/><ComboBoxItem Content="Manual: manter posição atual do vínculo no projeto"/><ComboBoxItem Content="Georreferenciar pelos vértices comuns do levantamento — recomendado"/></ComboBox>
+            <TextBlock Text="A posição do DWG no projeto preserva o local onde ele está vinculado, mesmo ao redefinir Terreno Padrão. O modo WCS usa as coordenadas originais do arquivo e pode colocar pisos longe do terreno se o DWG usar uma origem local." Foreground="{StaticResource SecondaryBrush}"/>
+            <Button x:Name="FindFloors" Content="Identificar áreas de piso" HorizontalAlignment="Left"/>
+            <TextBlock x:Name="FloorSummary" Text="Identifique os contornos e escolha o tipo de piso de cada layer."/>
+            <DataGrid x:Name="FloorTable" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" MaxHeight="250" MinHeight="95" HeadersVisibility="Column">
+              <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Criar" Width="50"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+                  <CheckBox IsChecked="{Binding Enabled, Mode=OneWay}" HorizontalAlignment="Center"/>
+                </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                <DataGridTextColumn Header="Layer / áreas / m²" Binding="{Binding Label}" IsReadOnly="True" Width="2*"/>
+                <DataGridTemplateColumn Header="Tipo de piso · espessura · materiais" Width="3*">
+                  <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                    <ComboBox ItemsSource="{Binding Types}" DisplayMemberPath="Label" SelectedItem="{Binding SelectedType, Mode=OneWay}" Margin="2"/>
+                  </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+              </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Text="Nível de referência dos pisos"/>
+            <ComboBox x:Name="FloorLevel" DisplayMemberPath="Label"/>
+            <TextBlock Text="O topo do piso recebe as cotas Z dos contornos DWG quando houver elevação; contornos em Z=0 usam as cotas do terreno. A base pode ser reta em tipos com camada variável. O piso escava o sólido onde houver interseção. Trechos externos são permitidos. Nível e deslocamento são calculados; materiais e espessura nominal seguem o tipo escolhido. Curvas do DWG são aproximadas por segmentos." Foreground="{StaticResource SecondaryBrush}"/>
+            <TextBlock x:Name="FloorIssues" Foreground="{StaticResource SecondaryBrush}"/>
+          </StackPanel>
+          <UniformGrid Columns="3">
+            <StackPanel><TextBlock Text="Datum declarado"/><TextBox x:Name="Datum" Text="SIRGAS 2000"/></StackPanel>
+            <StackPanel><TextBlock Text="Zona UTM (1–60)"/><TextBox x:Name="Zone" Text="22"/></StackPanel>
+            <StackPanel><TextBlock Text="Hemisfério"/><ComboBox x:Name="Hemisphere" SelectedIndex="0"><ComboBoxItem Content="Sul"/><ComboBoxItem Content="Norte"/></ComboBox></StackPanel>
+          </UniformGrid>
+          <TextBlock Text="Confira datum, zona e hemisfério: eles serão usados para calcular latitude/longitude. Sem transformação entre datums ou cálculo de geóide." Foreground="{StaticResource SecondaryBrush}"/>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+      <TabItem Header="3. Criação" x:Name="CreateTab">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,0,8"><StackPanel Margin="16">
+          <UniformGrid Columns="2">
+            <StackPanel><TextBlock Text="Tipo de sólido topográfico"/><ComboBox x:Name="TopoTypes" DisplayMemberPath="Label"/></StackPanel>
+            <StackPanel><TextBlock Text="Nível de referência"/><ComboBox x:Name="Levels" DisplayMemberPath="Label"/></StackPanel>
+          </UniformGrid>
+          <TextBlock Text="Espessura e materiais seguem o tipo selecionado. Curvas de nível seguem as configurações do Revit."/>
+          <TextBlock Text="Posicionamento e coordenadas" FontWeight="SemiBold" Margin="0,16,0,4"/>
+          <TextBlock x:Name="CurrentLocation"/>
+          <ComboBox x:Name="GeoMode" SelectedIndex="0"><ComboBoxItem Content="Manter coordenadas atuais em Terreno Padrão"/><ComboBoxItem Content="Definir novas coordenadas em Terreno Padrão"/></ComboBox>
+          <StackPanel x:Name="AnchorPanel" Visibility="Collapsed">
+            <TextBlock Text="Coordenadas compartilhadas da origem interna, em metros. Ao redefinir, a rotação será 0°. A elevação da origem define a referência vertical; os pontos base serão colocados na cota da superfície do terreno."/>
+            <UniformGrid Columns="3">
+              <StackPanel><TextBlock Text="Este da origem (m)"/><TextBox x:Name="AnchorE" Text="0.000"/></StackPanel>
+              <StackPanel><TextBlock Text="Norte da origem (m)"/><TextBox x:Name="AnchorN" Text="0.000"/></StackPanel>
+              <StackPanel><TextBlock Text="Elevação da origem (m)"/><TextBox x:Name="AnchorZ" Text="0.000"/></StackPanel>
+            </UniformGrid>
+            <CheckBox x:Name="GeoConsent"><TextBlock Text="Confirmo a substituição das coordenadas de Terreno Padrão. Esta alteração afeta a referência compartilhada de todo o projeto."/></CheckBox>
+          </StackPanel>
+          <TextBlock Text="Na localização existente, a altura interna pode diferir da cota do levantamento. A conferência utiliza a referência compartilhada do projeto." Foreground="{StaticResource SecondaryBrush}"/>
+          <TextBlock Text="Latitude e longitude do projeto" FontWeight="SemiBold" Margin="0,12,0,4"/>
+          <ComboBox x:Name="GeographicMode" SelectedIndex="0"><ComboBoxItem Content="Calcular da origem UTM — SIRGAS 2000 / WGS 84"/><ComboBoxItem Content="Informar latitude e longitude manualmente"/></ComboBox>
+          <UniformGrid x:Name="ManualGeography" Columns="2" Visibility="Collapsed">
+            <StackPanel><TextBlock Text="Latitude (graus; Sul negativo)"/><TextBox x:Name="Latitude"/></StackPanel>
+            <StackPanel><TextBlock Text="Longitude (graus; Oeste negativo)"/><TextBox x:Name="Longitude"/></StackPanel>
+          </UniformGrid>
+          <TextBlock x:Name="GeographicPreview" Text="Leia o levantamento para conferir a localização geográfica."/>
+          <TextBlock Text="Cada criação atualiza a mesma localização Terreno Padrão e remove as localizações TOPOBIM anteriores da lista. Os pontos base do projeto e de levantamento ficarão juntos em planta, na cota real da superfície do terreno nessa posição." Foreground="{StaticResource SecondaryBrush}"/>
+          <CheckBox x:Name="Reviewed"><TextBlock Text="Conferi o levantamento, as ocorrências, a referência espacial, latitude/longitude, o limite convexo e os pisos selecionados. Autorizo criar os elementos, atualizar Terreno Padrão e alinhar os dois pontos base."/></CheckBox>
+        </StackPanel></ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>
