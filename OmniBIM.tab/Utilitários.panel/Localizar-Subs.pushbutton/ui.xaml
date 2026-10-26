@@ -1,148 +1,129 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d"
-        Title="Localizar/Substituir" 
-        Height="650" Width="823"
-        MinHeight="500" MinWidth="800"
-        WindowStartupLocation="CenterScreen" Background="#F2F3F5" FontFamily="Segoe UI">
-    <Grid Margin="15">
+        Title="OmniBIM | Localizar e Substituir"
+        Height="590" Width="1250" MinHeight="440" MinWidth="900"
+        WindowStartupLocation="CenterScreen" Background="#F3F6FA" FontFamily="Segoe UI">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
-        <!-- TOPO: Entradas de Texto (Localizar e Substituir) -->
-        <Border Grid.Row="0" Background="White" CornerRadius="8" Padding="15" Margin="0,0,0,15">
+        <Border Grid.Row="0" Background="White" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="14" Margin="0,0,0,12">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0" Margin="5,0">
-                    <TextBlock Text="LOCALIZAR" FontSize="11" FontWeight="Bold" Foreground="#999" Margin="0,0,0,5"/>
-                    <TextBox x:Name="tbFind" Height="32" Padding="5,5,5,5" VerticalContentAlignment="Center"/>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*"/><ColumnDefinition Width="1.2*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                    <TextBlock Text="LOCALIZAR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
+                    <TextBox x:Name="tbFind" Height="32" Padding="7,5" VerticalContentAlignment="Center"/>
                 </StackPanel>
-
-                <StackPanel Grid.Column="1" Margin="5,0">
-                    <TextBlock Text="SUBSTITUIR" FontSize="11" FontWeight="Bold" Foreground="#999" Margin="0,0,0,5"/>
-                    <TextBox x:Name="tbReplace" Height="32" Padding="5,5,5,5" VerticalContentAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                    <TextBlock Text="SUBSTITUIR POR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
+                    <TextBox x:Name="tbReplace" Height="32" Padding="7,5" VerticalContentAlignment="Center"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="ESCOPO DA BUSCA" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
+                    <ComboBox x:Name="cbViewTypes" Height="32" VerticalContentAlignment="Center">
+                        <ComboBoxItem Content="Parâmetros do Modelo" IsSelected="True"/>
+                        <ComboBoxItem Content="Elementos Selecionados no Revit"/>
+                        <ComboBoxItem Content="Parâmetros de Vistas e Folhas"/>
+                        <ComboBoxItem Content="Notas de Texto"/>
+                        <ComboBoxItem Content="Nomes de Vistas e Folhas"/>
+                        <ComboBoxItem Content="Todos os Elementos Acima"/>
+                    </ComboBox>
                 </StackPanel>
             </Grid>
         </Border>
-
-        <!-- MEIO: Seleção e Pré-visualização -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="4*"/>
-                <ColumnDefinition Width="6*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- COLUNA ESQUERDA: Selecionar Vistas -->
-            <Border Grid.Column="0" Background="White" CornerRadius="8" Padding="15" Margin="0,0,7,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Grid.Row="0" Text="1. SELECIONAR VISTAS" FontWeight="Bold" FontSize="12" Margin="0,0,0,15" Foreground="#333"/>
-
-                    <!-- COMBOBOX COM AS NOVAS OPÇÕES DE FILTRAGEM -->
-                    <Grid Grid.Row="1" Margin="0,0,0,10">
-                        <ComboBox x:Name="cbViewTypes" Height="30" VerticalContentAlignment="Center">
-                            <ComboBoxItem Content="Todos os Tipos" IsSelected="True"/>
-                            <ComboBoxItem Content="Notas de Texto"/>
-                            <ComboBoxItem Content="Plantas 2D"/>
-                            <ComboBoxItem Content="Vistas 3D"/>
-                            <ComboBoxItem Content="Outras Vistas (Cortes, Elevações)"/>
-                            <ComboBoxItem Content="Tabelas"/>
-                            <ComboBoxItem Content="Folhas"/>
-                        </ComboBox>
-                    </Grid>
-
-                    <Grid Grid.Row="2" Margin="0,0,0,10">
-                        <StackPanel Orientation="Horizontal">
-                            <Button x:Name="btnSelectAll" Content="Selecionar Tudo" Background="Transparent" BorderThickness="0" Foreground="#666" Cursor="Hand" Margin="0,0,15,0"/>
-                            <Button x:Name="btnSelectNone" Content="Limpar Seleção" Background="Transparent" BorderThickness="0" Foreground="#666" Cursor="Hand"/>
-                        </StackPanel>
-                        <TextBlock x:Name="lblSelectedCount" Text="0 filtrados" HorizontalAlignment="Right" Foreground="#999" VerticalAlignment="Center" FontSize="11"/>
-                    </Grid>
-
-                    <ListBox x:Name="lbViews" Grid.Row="3" BorderBrush="#E5E5E5" BorderThickness="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsSelected}" Margin="5,5" VerticalContentAlignment="Center" Click="AoClicarCheckbox">
-                                    <StackPanel Margin="5,0,0,0">
-                                        <TextBlock Text="{Binding ViewName}" FontSize="12" Foreground="#333"/>
-                                        <TextBlock Text="{Binding ViewType}" FontSize="10" Foreground="#999" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                </CheckBox>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+        <Border Grid.Row="1" Background="White" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="12">
+            <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="2,0,2,10">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="PRÉ-VISUALIZAÇÃO DAS ALTERAÇÕES (SIMULAÇÃO)" FontSize="13" FontWeight="Bold" Foreground="#526783" VerticalAlignment="Center"/>
+                    <Border Grid.Column="1" Background="#EEF4FF" BorderBrush="#C8D9FA" BorderThickness="1" CornerRadius="7" Padding="10,6" VerticalAlignment="Center">
+                        <TextBlock x:Name="lblSummary" Text="Total: 0    Válidos: 0    Sem alteração: 0    Somente leitura: 0    Conflitos / Erros: 0"
+                                   Foreground="#1E40AF" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </Border>
                 </Grid>
-            </Border>
-
-            <!-- COLUNA DIREITA: Pré-visualização -->
-            <Border Grid.Column="1" Background="White" CornerRadius="8" Padding="15" Margin="7,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <Grid Grid.Row="0" Margin="0,0,0,15">
-                        <TextBlock Text="2. PRÉ-VISUALIZAÇÃO" FontWeight="Bold" FontSize="12" Foreground="#333"/>
-                        <TextBlock x:Name="lblPreviewCount" Text="0 correspondências" HorizontalAlignment="Right" Foreground="#999" FontSize="11"/>
-                    </Grid>
-
-                    <Grid Grid.Row="1" Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="NOME ATUAL" FontSize="11" FontWeight="Bold" Foreground="#999"/>
-                        <TextBlock Grid.Column="1" Text="NOVO NOME" FontSize="11" FontWeight="Bold" Foreground="#999"/>
-                    </Grid>
-
-                    <ListBox x:Name="lbPreview" Grid.Row="2" BorderBrush="#E5E5E5" BorderThickness="1" ScrollViewer.VerticalScrollBarVisibility="Auto">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="5,7">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding CurrentName}" Foreground="#555" TextTrimming="CharacterEllipsis"/>
-                                    <TextBlock Grid.Column="1" Text=" ➔ " Foreground="#CCC" Margin="10,0"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding NewName}" Foreground="#2B6EEA" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                <Grid Grid.Row="1" Margin="2,0,2,8">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button x:Name="btnSelectAll" Content="Marcar Todos" Background="Transparent" BorderThickness="0" Foreground="#2459B8" Cursor="Hand" Padding="4,3" FontWeight="SemiBold"/>
+                        <Button x:Name="btnSelectNone" Content="Desmarcar Todos" Background="Transparent" BorderThickness="0" Foreground="#526783" Cursor="Hand" Padding="8,3"/>
+                        <Button x:Name="btnLocate" Content="⌕  Focar no Revit (Zoom)" Background="#EEF4FF" Foreground="#2459B8" BorderThickness="0" Padding="9,4" Cursor="Hand" FontWeight="SemiBold" ToolTip="Selecione uma linha e localize o elemento no Revit"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" x:Name="lblSelectedCount" Text="Digite o texto para localizar" Foreground="#64748B" VerticalAlignment="Center" FontSize="11"/>
                 </Grid>
-            </Border>
-        </Grid>
-
-        <!-- RODAPÉ: Botões -->
-        <Grid Grid.Row="2" Margin="0,15,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="btnCancel" Content="Cancelar" Background="Transparent" BorderThickness="0" Foreground="#555" Width="80" Height="35" Margin="0,0,10,0" Cursor="Hand"/>
-                <Button x:Name="btnRename" Content="Renomear Vistas" Background="#2B6EEA" Foreground="White" BorderThickness="0" Width="140" Height="35" Cursor="Hand" FontWeight="SemiBold">
-                    <Button.Resources>
-                        <Style TargetType="Border">
-                            <Setter Property="CornerRadius" Value="4"/>
+                <DataGrid x:Name="dgResults" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="False"
+                          SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                          HorizontalGridLinesBrush="#E2E8F0" VerticalGridLinesBrush="#E2E8F0" BorderBrush="#CBD5E1" BorderThickness="1"
+                          RowHeight="52" ColumnHeaderHeight="30" FontSize="12" Background="White" AlternatingRowBackground="#FAFCFF"
+                          MouseDoubleClick="AoDuploCliqueItem" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <DataGrid.Resources>
+                        <Style TargetType="DataGridColumnHeader">
+                            <Setter Property="Background" Value="#F7F9FC"/><Setter Property="Foreground" Value="#334155"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="7,5"/>
+                            <Setter Property="BorderBrush" Value="#DCE4EF"/><Setter Property="BorderThickness" Value="0,0,1,1"/>
                         </Style>
-                    </Button.Resources>
-                </Button>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="Padding" Value="7,5"/><Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="VerticalContentAlignment" Value="Center"/>
+                        </Style>
+                    </DataGrid.Resources>
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="✓" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="42" IsReadOnly="False"/>
+                        <DataGridTextColumn Header="Elemento / Item" Binding="{Binding ElementItem}" Width="2.2*" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Campo / Parâmetro" Binding="{Binding FieldName}" Width="1.4*" IsReadOnly="True">
+                            <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="VerticalAlignment" Value="Center"/></Style></DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Valor Atual" Binding="{Binding CurrentText}" Width="2.2*" IsReadOnly="True">
+                            <DataGridTextColumn.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Setter Property="Background" Value="#FFF7E6"/>
+                                    <Setter Property="BorderBrush" Value="#F2D6A2"/>
+                                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                                    <Setter Property="Padding" Value="9,5"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.CellStyle>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Foreground" Value="#854D0E"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Valor Proposto" Binding="{Binding ProposedText}" Width="2.2*" IsReadOnly="True">
+                            <DataGridTextColumn.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Setter Property="Background" Value="#EAF2FF"/>
+                                    <Setter Property="BorderBrush" Value="#C8D9FA"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0,0"/>
+                                    <Setter Property="Padding" Value="9,5"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                </Style>
+                            </DataGridTextColumn.CellStyle>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="Foreground" Value="#1746A2"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <TextBlock Text="Revise os valores propostos e marque somente os itens que deseja alterar." Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="btnCancel" Content="Cancelar" Background="Transparent" BorderThickness="0" Foreground="#526783" Width="85" Height="35" Margin="0,0,10,0" Cursor="Hand"/>
+                <Button x:Name="btnRename" Content="Aplicar Alterações" Background="#2459B8" Foreground="White" BorderThickness="0" Width="150" Height="35" Cursor="Hand" FontWeight="SemiBold"/>
             </StackPanel>
         </Grid>
     </Grid>
