@@ -2,70 +2,112 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="OmniBIM | Localizar e Substituir"
         Height="590" Width="1250" MinHeight="440" MinWidth="900"
-        WindowStartupLocation="CenterScreen" Background="#F3F6FA" FontFamily="Segoe UI">
+        WindowStartupLocation="CenterScreen" Background="#F8FAFC" FontFamily="Segoe UI">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="White" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="14" Margin="0,0,0,12">
+        
+        <!-- PAINEL SUPERIOR (BUSCA) -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,12">
             <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="1.2*"/><ColumnDefinition Width="1.2*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                    <TextBlock Text="LOCALIZAR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
-                    <TextBox x:Name="tbFind" Height="32" Padding="7,5" VerticalContentAlignment="Center"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.2*"/>
+                    <ColumnDefinition Width="1.2*"/>
+                    <ColumnDefinition Width="2*"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                    <TextBlock Text="LOCALIZAR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,6"/>
+                    <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="White">
+                        <TextBox x:Name="tbFind" Height="34" Padding="8,6" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent"/>
+                    </Border>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                    <TextBlock Text="SUBSTITUIR POR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
-                    <TextBox x:Name="tbReplace" Height="32" Padding="7,5" VerticalContentAlignment="Center"/>
+                
+                <StackPanel Grid.Column="1" Margin="0,0,16,0">
+                    <TextBlock Text="SUBSTITUIR POR" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,6"/>
+                    <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="White">
+                        <TextBox x:Name="tbReplace" Height="34" Padding="8,6" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent"/>
+                    </Border>
                 </StackPanel>
+                
                 <StackPanel Grid.Column="2">
-                    <TextBlock Text="ESCOPO DA BUSCA" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
-                    <ComboBox x:Name="cbViewTypes" Height="32" VerticalContentAlignment="Center">
-                        <ComboBoxItem Content="Parâmetros do Modelo" IsSelected="True"/>
-                        <ComboBoxItem Content="Elementos Selecionados no Revit"/>
-                        <ComboBoxItem Content="Parâmetros de Vistas e Folhas"/>
-                        <ComboBoxItem Content="Notas de Texto"/>
-                        <ComboBoxItem Content="Nomes de Vistas e Folhas"/>
-                        <ComboBoxItem Content="Todos os Elementos Acima"/>
-                    </ComboBox>
+                    <TextBlock Text="ESCOPO DA BUSCA" FontSize="11" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,6"/>
+                    <Border BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="White">
+                        <ComboBox x:Name="cbViewTypes" Height="34" VerticalContentAlignment="Center" BorderThickness="0" Background="Transparent">
+                            <ComboBoxItem Content="Parâmetros do Modelo" IsSelected="True"/>
+                            <ComboBoxItem Content="Elementos Selecionados no Revit"/>
+                            <ComboBoxItem Content="Parâmetros de Vistas e Folhas"/>
+                            <ComboBoxItem Content="Notas de Texto"/>
+                            <ComboBoxItem Content="Nomes de Vistas e Folhas"/>
+                            <ComboBoxItem Content="Todos os Elementos Acima"/>
+                        </ComboBox>
+                    </Border>
                 </StackPanel>
             </Grid>
         </Border>
-        <Border Grid.Row="1" Background="White" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="12">
+        
+        <!-- PAINEL CENTRAL (TABELA) -->
+        <Border Grid.Row="1" Background="White" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16">
             <Grid>
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="2,0,2,10">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="PRÉ-VISUALIZAÇÃO DAS ALTERAÇÕES (SIMULAÇÃO)" FontSize="13" FontWeight="Bold" Foreground="#526783" VerticalAlignment="Center"/>
-                    <Border Grid.Column="1" Background="#EEF4FF" BorderBrush="#C8D9FA" BorderThickness="1" CornerRadius="7" Padding="10,6" VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="PRÉ-VISUALIZAÇÃO DAS ALTERAÇÕES (SIMULAÇÃO)" FontSize="13" FontWeight="Bold" Foreground="#475569" VerticalAlignment="Center"/>
+                    <Border Grid.Column="1" Background="#EFF6FF" BorderBrush="#DBEAFE" BorderThickness="1" CornerRadius="6" Padding="12,6" VerticalAlignment="Center">
                         <TextBlock x:Name="lblSummary" Text="Total: 0    Válidos: 0    Sem alteração: 0    Somente leitura: 0    Conflitos / Erros: 0"
-                                   Foreground="#1E40AF" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                   Foreground="#1D4ED8" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </Border>
                 </Grid>
-                <Grid Grid.Row="1" Margin="2,0,2,8">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                
+                <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Button x:Name="btnSelectAll" Content="Marcar Todos" Background="Transparent" BorderThickness="0" Foreground="#2459B8" Cursor="Hand" Padding="4,3" FontWeight="SemiBold"/>
-                        <Button x:Name="btnSelectNone" Content="Desmarcar Todos" Background="Transparent" BorderThickness="0" Foreground="#526783" Cursor="Hand" Padding="8,3"/>
-                        <Button x:Name="btnLocate" Content="⌕  Focar no Revit (Zoom)" Background="#EEF4FF" Foreground="#2459B8" BorderThickness="0" Padding="9,4" Cursor="Hand" FontWeight="SemiBold" ToolTip="Selecione uma linha e localize o elemento no Revit"/>
+                        <Button x:Name="btnSelectAll" Content="Marcar Todos" Background="Transparent" BorderThickness="0" Foreground="#2563EB" Cursor="Hand" Padding="4,3" FontWeight="SemiBold"/>
+                        <Button x:Name="btnSelectNone" Content="Desmarcar Todos" Background="Transparent" BorderThickness="0" Foreground="#64748B" Cursor="Hand" Padding="12,3,8,3"/>
+                        <Button x:Name="btnLocate" Content="⌕  Focar no Revit (Zoom)" Background="#F1F5F9" Foreground="#334155" BorderThickness="0" Padding="10,5" Cursor="Hand" FontWeight="SemiBold" ToolTip="Selecione uma linha e localize o elemento no Revit">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                     </StackPanel>
-                    <TextBlock Grid.Column="1" x:Name="lblSelectedCount" Text="Digite o texto para localizar" Foreground="#64748B" VerticalAlignment="Center" FontSize="11"/>
+                    <TextBlock Grid.Column="1" x:Name="lblSelectedCount" Text="Digite o texto para localizar" Foreground="#94A3B8" VerticalAlignment="Center" FontSize="12"/>
                 </Grid>
+                
                 <DataGrid x:Name="dgResults" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" IsReadOnly="False"
                           SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                          HorizontalGridLinesBrush="#E2E8F0" VerticalGridLinesBrush="#E2E8F0" BorderBrush="#CBD5E1" BorderThickness="1"
-                          RowHeight="52" ColumnHeaderHeight="30" FontSize="12" Background="White" AlternatingRowBackground="#FAFCFF"
+                          HorizontalGridLinesBrush="#F1F5F9" VerticalGridLinesBrush="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1"
+                          RowHeight="48" ColumnHeaderHeight="34" FontSize="12" Background="White" AlternatingRowBackground="#F8FAFC"
                           MouseDoubleClick="AoDuploCliqueItem" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
                     <DataGrid.Resources>
                         <Style TargetType="DataGridColumnHeader">
-                            <Setter Property="Background" Value="#F7F9FC"/><Setter Property="Foreground" Value="#334155"/>
-                            <Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="7,5"/>
-                            <Setter Property="BorderBrush" Value="#DCE4EF"/><Setter Property="BorderThickness" Value="0,0,1,1"/>
+                            <Setter Property="Background" Value="#F8FAFC"/>
+                            <Setter Property="Foreground" Value="#475569"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Padding" Value="10,6"/>
+                            <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                            <Setter Property="BorderThickness" Value="0,0,1,1"/>
                         </Style>
                         <Style TargetType="DataGridCell">
-                            <Setter Property="Padding" Value="7,5"/><Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Padding" Value="10,6"/>
+                            <Setter Property="BorderThickness" Value="0"/>
                             <Setter Property="VerticalContentAlignment" Value="Center"/>
                         </Style>
                     </DataGrid.Resources>
@@ -80,10 +122,10 @@
                         <DataGridTextColumn Header="Valor Atual" Binding="{Binding CurrentText}" Width="2.2*" IsReadOnly="True">
                             <DataGridTextColumn.CellStyle>
                                 <Style TargetType="DataGridCell">
-                                    <Setter Property="Background" Value="#FFF7E6"/>
-                                    <Setter Property="BorderBrush" Value="#F2D6A2"/>
+                                    <Setter Property="Background" Value="#FEF3C7"/>
+                                    <Setter Property="BorderBrush" Value="#FDE68A"/>
                                     <Setter Property="BorderThickness" Value="0,0,1,0"/>
-                                    <Setter Property="Padding" Value="9,5"/>
+                                    <Setter Property="Padding" Value="12,6"/>
                                     <Setter Property="VerticalContentAlignment" Value="Center"/>
                                 </Style>
                             </DataGridTextColumn.CellStyle>
@@ -91,7 +133,7 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="TextWrapping" Value="Wrap"/>
                                     <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="#854D0E"/>
+                                    <Setter Property="Foreground" Value="#92400E"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
@@ -99,10 +141,9 @@
                         <DataGridTextColumn Header="Valor Proposto" Binding="{Binding ProposedText}" Width="2.2*" IsReadOnly="True">
                             <DataGridTextColumn.CellStyle>
                                 <Style TargetType="DataGridCell">
-                                    <Setter Property="Background" Value="#EAF2FF"/>
-                                    <Setter Property="BorderBrush" Value="#C8D9FA"/>
-                                    <Setter Property="BorderThickness" Value="0,0,0,0"/>
-                                    <Setter Property="Padding" Value="9,5"/>
+                                    <Setter Property="Background" Value="#EFF6FF"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Padding" Value="12,6"/>
                                     <Setter Property="VerticalContentAlignment" Value="Center"/>
                                 </Style>
                             </DataGridTextColumn.CellStyle>
@@ -110,7 +151,7 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="TextWrapping" Value="Wrap"/>
                                     <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="#1746A2"/>
+                                    <Setter Property="Foreground" Value="#1E40AF"/>
                                     <Setter Property="FontWeight" Value="Bold"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
@@ -119,11 +160,60 @@
                 </DataGrid>
             </Grid>
         </Border>
-        <Grid Grid.Row="2" Margin="0,12,0,0">
-            <TextBlock Text="Revise os valores propostos e marque somente os itens que deseja alterar." Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+        
+        <!-- RODAPÉ (BOTÕES) -->
+        <Grid Grid.Row="2" Margin="0,16,0,0">
+            <TextBlock Text="Revise os valores propostos e marque somente os itens que deseja alterar." Foreground="#64748B" FontSize="12" VerticalAlignment="Center"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="btnCancel" Content="Cancelar" Background="Transparent" BorderThickness="0" Foreground="#526783" Width="85" Height="35" Margin="0,0,10,0" Cursor="Hand"/>
-                <Button x:Name="btnRename" Content="Aplicar Alterações" Background="#2459B8" Foreground="White" BorderThickness="0" Width="150" Height="35" Cursor="Hand" FontWeight="SemiBold"/>
+                
+                <!-- Botão Cancelar com estilo arredondado e Hover -->
+                <Button x:Name="btnCancel" Content="Cancelar" Foreground="#64748B" Width="95" Height="36" Margin="0,0,12,0" Cursor="Hand" FontWeight="SemiBold">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F1F5F9"/>
+                                    <Setter Property="Foreground" Value="#334155"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <!-- Botão Confirmar com estilo arredondado e Hover -->
+                <Button x:Name="btnRename" Content="Aplicar Alterações" Foreground="White" Width="160" Height="36" Cursor="Hand" FontWeight="SemiBold">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="#2563EB"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#1D4ED8"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
             </StackPanel>
         </Grid>
     </Grid>

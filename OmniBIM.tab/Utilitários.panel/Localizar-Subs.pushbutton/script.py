@@ -2,15 +2,84 @@
 __title__ = "Localizar/Substituir"
 __docs__ = "Localiza e substitui parâmetros de texto, notas, vistas e folhas com pré-visualização em tabela."
 
+import clr
+clr.AddReference("System")
+clr.AddReference("WindowsBase")
+clr.AddReference("PresentationCore")
+clr.AddReference("PresentationFramework")
+
+import re
 from Autodesk.Revit.DB import *
 from pyrevit import revit, forms
+import time as _time
+from System import TimeSpan
 from System.Collections.Generic import List
-import clr
-import re
+from System.Windows.Threading import DispatcherTimer
+from System.Windows.Input import Mouse, Cursors
 
-clr.AddReference("System")
 doc = __revit__.ActiveUIDocument.Document
 uidoc = __revit__.ActiveUIDocument
+
+# ---------------------------------------------------------------------------
+# CONFIGURAÇÕES
+# ---------------------------------------------------------------------------
+LIMITE_RESULTADOS = 2000      # máximo de linhas exibidas/alteradas por busca
+ATRASO_DIGITACAO_MS = 350     # tempo (ms) após parar de digitar para disparar a busca
+ORCAMENTO_MS_POR_TICK = 40    # tempo máximo (ms) de indexação por fatia; menor = janela mais fluida
+
+# Nomes de parâmetros ignorados. Use o nome NORMALIZADO:
+# minúsculo, sem espaços, "_", "-" ou ".". Ex.: "Ifc GUID" -> u"ifcguid"
+PARAMS_IGNORADOS_NOMES = set([
+    u"ifcguid",
+    u"typeifcguid",
+])
+
+
+def _bip(nome):
+    """Obtém um BuiltInParameter pelo nome sem quebrar se não existir nesta versão do Revit."""
+    return getattr(BuiltInParameter, nome, None)
+
+
+# Parâmetros nativos ignorados
+BIPS_IGNORADOS = set(b for b in (
+    _bip("IFC_GUID"),
+    _bip("IFC_TYPE_GUID"),
+) if b is not None)
+
+
+# ---------------------------------------------------------------------------
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------------------------
+def _normalizar(nome):
+    return re.sub(r"[\s_\-\.]", u"", nome or u"").lower()
+
+
+def parametro_relevante(p):
+    """True apenas para parâmetros de texto, editáveis e que façam sentido alterar."""
+    try:
+        if p.StorageType != StorageType.String or p.IsReadOnly:
+            return False
+        d = p.Definition
+        if d is None:
+            return False
+        if _normalizar(d.Name) in PARAMS_IGNORADOS_NOMES:
+            return False
+        try:
+            # Só existe em InternalDefinition (parâmetros nativos)
+            if d.BuiltInParameter in BIPS_IGNORADOS:
+                return False
+        except AttributeError:
+            pass  # ExternalDefinition (parâmetro compartilhado)
+        return True
+    except:
+        return False
+
+
+def obter_id_int(el):
+    try:
+        return el.Id.IntegerValue
+    except:
+        return el.Id.Value
 
 
 def obter_nome_elemento(el):
@@ -38,6 +107,9 @@ def limpar_texto_exibicao(texto):
     return u" ".join([linha.strip() for linha in texto.splitlines() if linha.strip()])
 
 
+# ---------------------------------------------------------------------------
+# ITEM DA TABELA
+# ---------------------------------------------------------------------------
 class ParametroItem(object):
     """Linha da tabela de pré-visualização; mantém a referência ao elemento/parâmetro Revit."""
     def __init__(self, element, param=None, is_text_note=False, is_view_name=False):
@@ -46,7 +118,7 @@ class ParametroItem(object):
         self.is_text_note = is_text_note
         self.is_view_name = is_view_name
         self.IsSelected = True
-        self.ItemId = str(element.Id.IntegerValue if hasattr(element.Id, "IntegerValue") else element.Id.Value)
+        self.ItemId = str(obter_id_int(element))
         self.ElementItem = obter_nome_elemento(element)
         self.FieldName = u""
         self.CurrentText = u""
@@ -67,22 +139,65 @@ class ParametroItem(object):
         self.ProposedText = self.CurrentText
 
 
+# ---------------------------------------------------------------------------
+# JANELA
+# ---------------------------------------------------------------------------
 class JanelaLocalizarSubstituir(forms.WPFWindow):
     def __init__(self, xaml_file_name):
         forms.WPFWindow.__init__(self, xaml_file_name)
         self.elementos_escopo = []
         self.itens_encontrados = []
+        self.indice = []  # lista de (tipo, elemento, parametro, texto)
+        self.ids_modelo = []
+        self.gerador_indice = None
+        self.indexando = False
+        self.total_indice = 0
+        self.processados = 0
+
+        # Timers de "debounce": só executam quando o usuário para de digitar
+        self.timer_busca = self._criar_timer(self._tick_busca)
+        self.timer_preview = self._criar_timer(self._tick_preview)
+
+        # Timer da indexação em fatias (prioridade Background: a interface tem preferência)
+        self.timer_indice = DispatcherTimer()
+        self.timer_indice.Interval = TimeSpan.FromMilliseconds(1)
+        self.timer_indice.Tick += self._tick_indice
 
         self.cbViewTypes.SelectionChanged += self.ao_mudar_escopo
-        self.tbFind.TextChanged += self.atualizar_busca
-        self.tbReplace.TextChanged += self.atualizar_preview
+        self.tbFind.TextChanged += self.agendar_busca
+        self.tbReplace.TextChanged += self.agendar_preview
         self.btnSelectAll.Click += self.selecionar_tudo
         self.btnSelectNone.Click += self.limpar_selecao
         self.btnLocate.Click += self.localizar_no_revit
         self.btnCancel.Click += self.fechar_janela
         self.btnRename.Click += self.executar_substituicao
-        self.carregar_escopo()
+        self.Loaded += self.ao_carregar_janela
+        self.Closed += self.ao_fechar_janela
 
+    # ----- timers / debounce -------------------------------------------------
+    def _criar_timer(self, callback):
+        t = DispatcherTimer()
+        t.Interval = TimeSpan.FromMilliseconds(ATRASO_DIGITACAO_MS)
+        t.Tick += callback
+        return t
+
+    def agendar_busca(self, sender, args):
+        self.timer_busca.Stop()
+        self.timer_busca.Start()
+
+    def _tick_busca(self, sender, args):
+        self.timer_busca.Stop()
+        self.atualizar_busca(None, None)
+
+    def agendar_preview(self, sender, args):
+        self.timer_preview.Stop()
+        self.timer_preview.Start()
+
+    def _tick_preview(self, sender, args):
+        self.timer_preview.Stop()
+        self.atualizar_preview(None, None)
+
+    # ----- eventos da tabela -------------------------------------------------
     def AoDuploCliqueItem(self, sender, args):
         self.localizar_no_revit(None, None)
 
@@ -106,13 +221,59 @@ class JanelaLocalizarSubstituir(forms.WPFWindow):
         except Exception as e:
             forms.alert(u"Não foi possível focar o elemento: {}".format(e))
 
+    # ----- escopo e indexação em fatias --------------------------------------
+    def ao_carregar_janela(self, sender, args):
+        # A janela já está visível; a indexação roda em fatias curtas
+        self.iniciar_indexacao()
+
+    def ao_fechar_janela(self, sender, args):
+        # Evita que timers disparem (e chamem a API do Revit) depois que a janela fechou
+        self.timer_indice.Stop()
+        self.timer_busca.Stop()
+        self.timer_preview.Stop()
+
     def ao_mudar_escopo(self, sender, args):
-        self.carregar_escopo()
+        self.iniciar_indexacao()
         self.atualizar_busca(None, None)
+
+    def iniciar_indexacao(self):
+        self.timer_indice.Stop()
+        self.carregar_escopo()
+        self.indice = []
+        self.processados = 0
+        self.total_indice = len(self.elementos_escopo) + len(self.ids_modelo)
+        self.gerador_indice = self._gerar_indice()
+        self.indexando = True
+        self.timer_indice.Start()
+
+    def _tick_indice(self, sender, args):
+        limite = _time.time() + ORCAMENTO_MS_POR_TICK / 1000.0
+        try:
+            while _time.time() < limite:
+                next(self.gerador_indice)
+                self.processados += 1
+        except StopIteration:
+            self.timer_indice.Stop()
+            self.indexando = False
+            self.atualizar_busca(None, None)
+            return
+        if not (self.tbFind.Text or u""):
+            self.lblSelectedCount.Text = u"Indexando... {}%  (você já pode digitar)".format(self._percentual())
+
+    def _percentual(self):
+        if not self.total_indice:
+            return 0
+        return int(100.0 * self.processados / self.total_indice)
+
+    def _sufixo_progresso(self):
+        if not self.indexando:
+            return u""
+        return u"  |  indexando {}% (resultado parcial)".format(self._percentual())
 
     def carregar_escopo(self):
         idx = self.cbViewTypes.SelectedIndex
         self.elementos_escopo = []
+        self.ids_modelo = []
         if idx == 1:
             for eid in uidoc.Selection.GetElementIds():
                 el = doc.GetElement(eid)
@@ -129,81 +290,139 @@ class JanelaLocalizarSubstituir(forms.WPFWindow):
             self.elementos_escopo.extend(folhas)
             self.elementos_escopo.extend(tabelas)
         if idx in [0, 5]:
-            todos = FilteredElementCollector(doc).WhereElementIsNotElementType().ToElements()
-            for el in todos:
-                try:
-                    if el.Category and el.Category.CategoryType == CategoryType.Model:
-                        if idx == 0:
-                            try:
-                                cid = el.Category.Id
-                                if cid == ElementId(BuiltInCategory.OST_PropertySet) or cid == ElementId(BuiltInCategory.OST_MaterialAssets):
-                                    continue
-                            except:
-                                pass
-                        self.elementos_escopo.append(el)
-                except:
-                    continue
+            # Apenas os Ids (rápido). Os elementos são abertos aos poucos durante a indexação.
+            self.ids_modelo = list(FilteredElementCollector(doc).WhereElementIsNotElementType().ToElementIds())
 
+    def _modelo_valido(self, el, idx):
+        try:
+            if el is None or el.Category is None:
+                return False
+            if el.Category.CategoryType != CategoryType.Model:
+                return False
+            if idx == 0:
+                try:
+                    cid = el.Category.Id
+                    if cid == ElementId(BuiltInCategory.OST_PropertySet) or cid == ElementId(BuiltInCategory.OST_MaterialAssets):
+                        return False
+                except:
+                    pass
+            return True
+        except:
+            return False
+
+    def _gerar_indice(self):
+        """Gerador: cada 'yield' marca um elemento processado; o timer retoma em fatias."""
+        idx = self.cbViewTypes.SelectedIndex
+        vistos = set()
+        for el in self.elementos_escopo:
+            self._indexar_elemento(el, idx, vistos)
+            yield
+        for eid in self.ids_modelo:
+            el = doc.GetElement(eid)
+            if self._modelo_valido(el, idx):
+                self._indexar_elemento(el, idx, vistos)
+            yield
+
+    def _indexar_elemento(self, el, idx, vistos):
+        try:
+            if idx in [3, 5] and isinstance(el, TextNote) and el.Text:
+                self.indice.append(("textnote", el, None, el.Text))
+
+            if idx == 4 and isinstance(el, (View, ViewSheet)) and el.Name:
+                self.indice.append(("viewname", el, None, el.Name))
+
+            if idx in [0, 1, 2, 5]:
+                eid = obter_id_int(el)
+                for p in el.Parameters:
+                    if not parametro_relevante(p):
+                        continue
+                    val = p.AsString()
+                    if not val:
+                        continue
+                    key = (eid, p.Definition.Name, val)
+                    if key in vistos:
+                        continue
+                    vistos.add(key)
+                    self.indice.append(("param", el, p, val))
+        except:
+            pass
+
+    # ----- busca e pré-visualização -----------------------------------------
     def atualizar_busca(self, sender, args):
         find_str = self.tbFind.Text or u""
         self.itens_encontrados = []
         if not find_str:
             self.dgResults.ItemsSource = self.itens_encontrados
-            self.lblSelectedCount.Text = u"Digite o texto para localizar"
+            self.lblSelectedCount.Text = u"Digite o texto para localizar" + self._sufixo_progresso()
             self.atualizar_preview(None, None)
             return
+
         padrao = re.compile(re.escape(find_str), re.IGNORECASE)
-        idx = self.cbViewTypes.SelectedIndex
-        vistos = set()
-        for el in self.elementos_escopo:
+        truncado = False
+        for tipo, el, p, texto in self.indice:
+            if not padrao.search(texto):
+                continue
+            if len(self.itens_encontrados) >= LIMITE_RESULTADOS:
+                truncado = True
+                break
             try:
-                if isinstance(el, TextNote) and idx in [3, 5] and el.Text and padrao.search(el.Text):
-                    key = (str(el.Id), "textnote")
-                    if key not in vistos:
-                        self.itens_encontrados.append(ParametroItem(el, is_text_note=True)); vistos.add(key)
-                if idx == 4 and isinstance(el, (View, ViewSheet)) and el.Name and padrao.search(el.Name):
-                    key = (str(el.Id), "viewname")
-                    if key not in vistos:
-                        self.itens_encontrados.append(ParametroItem(el, is_view_name=True)); vistos.add(key)
-                if idx in [0, 1, 2, 5]:
-                    for p in el.Parameters:
-                        if p.StorageType == StorageType.String and not p.IsReadOnly:
-                            val = p.AsString()
-                            if val and padrao.search(val):
-                                key = (str(el.Id), p.Definition.Name, val)
-                                if key not in vistos:
-                                    self.itens_encontrados.append(ParametroItem(el, param=p)); vistos.add(key)
+                if tipo == "textnote":
+                    self.itens_encontrados.append(ParametroItem(el, is_text_note=True))
+                elif tipo == "viewname":
+                    self.itens_encontrados.append(ParametroItem(el, is_view_name=True))
+                else:
+                    self.itens_encontrados.append(ParametroItem(el, param=p))
             except:
                 continue
+
         self.dgResults.ItemsSource = self.itens_encontrados
-        self.lblSelectedCount.Text = u"Total: {}".format(len(self.itens_encontrados))
+        txt = u"Total: {}".format(len(self.itens_encontrados))
+        if truncado:
+            txt += u" (limitado a {} — refine a busca)".format(LIMITE_RESULTADOS)
+        self.lblSelectedCount.Text = txt + self._sufixo_progresso()
         self.atualizar_preview(None, None)
 
     def atualizar_preview(self, sender, args):
         find_str = self.tbFind.Text or u""
         replace_str = self.tbReplace.Text or u""
-        if find_str:
-            padrao = re.compile(re.escape(find_str), re.IGNORECASE)
-            for item in self.itens_encontrados:
+        padrao = re.compile(re.escape(find_str), re.IGNORECASE) if find_str else None
+
+        for item in self.itens_encontrados:
+            if padrao:
                 if padrao.search(item.CurrentText):
                     item.ProposedText = padrao.sub(replace_str, item.CurrentText)
-                    item.Status = u"Válido" if item.ProposedText != item.CurrentText else u"Sem alteração"
-                    item.Details = u"Pronto para aplicar." if item.ProposedText != item.CurrentText else u"O valor proposto é igual ao atual."
+                    if item.ProposedText != item.CurrentText:
+                        item.Status = u"Válido"
+                        item.Details = u"Pronto para aplicar."
+                    else:
+                        item.Status = u"Sem alteração"
+                        item.Details = u"O valor proposto é igual ao atual."
                 else:
                     item.ProposedText = item.CurrentText
                     item.Status = u"Sem alteração"
                     item.Details = u"O texto procurado não corresponde mais."
-        for item in self.itens_encontrados:
             if item.param and item.param.IsReadOnly:
                 item.Status = u"Somente leitura"
                 item.Details = u"O parâmetro não permite edição."
+
         self.dgResults.Items.Refresh()
-        selecionados = len([i for i in self.itens_encontrados if i.IsSelected])
-        validos = len([i for i in self.itens_encontrados if i.IsSelected and i.Status == u"Válido"])
-        sem_alt = len([i for i in self.itens_encontrados if i.IsSelected and i.Status == u"Sem alteração"])
-        leitura = len([i for i in self.itens_encontrados if i.IsSelected and i.Status == u"Somente leitura"])
-        conflitos = len([i for i in self.itens_encontrados if i.IsSelected and i.Status not in [u"Válido", u"Sem alteração", u"Somente leitura"]])
-        self.lblSummary.Text = u"Total: {}    Válidos: {}    Sem alteração: {}    Somente leitura: {}    Conflitos / Erros: {}".format(selecionados, validos, sem_alt, leitura, conflitos)
+
+        # Contagem em uma única passagem
+        selecionados = validos = sem_alt = leitura = conflitos = 0
+        for i in self.itens_encontrados:
+            if not i.IsSelected:
+                continue
+            selecionados += 1
+            if i.Status == u"Válido":
+                validos += 1
+            elif i.Status == u"Sem alteração":
+                sem_alt += 1
+            elif i.Status == u"Somente leitura":
+                leitura += 1
+            else:
+                conflitos += 1
+        self.lblSummary.Text = u"Total: {}    Válidos: {}    Sem alteração: {}    Somente leitura: {}    Conflitos / Erros: {}".format(
+            selecionados, validos, sem_alt, leitura, conflitos)
 
     def AoClicarCheckbox(self, sender, args):
         self.atualizar_preview(None, None)
@@ -223,7 +442,14 @@ class JanelaLocalizarSubstituir(forms.WPFWindow):
     def fechar_janela(self, sender, args):
         self.Close()
 
+    # ----- aplicação ---------------------------------------------------------
     def executar_substituicao(self, sender, args):
+        # Garante que a pré-visualização reflete o que está nos campos agora
+        self.timer_indice.Stop()
+        self.timer_busca.Stop()
+        self.timer_preview.Stop()
+        self.atualizar_preview(None, None)
+
         find_str = self.tbFind.Text or u""
         replace_str = self.tbReplace.Text or u""
         if not find_str:
@@ -262,6 +488,7 @@ class JanelaLocalizarSubstituir(forms.WPFWindow):
         forms.alert(u"Processo concluído.\nAlterações realizadas: {}\nFalhas: {}".format(sucessos, erros))
         self.Close()
 
+''
 try:
     JanelaLocalizarSubstituir('ui.xaml').ShowDialog()
 except Exception as ex:
