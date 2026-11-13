@@ -17,6 +17,7 @@ class Point(namedtuple('SurveyPoint', 'E N Z')):
 
 
 ReadResult = namedtuple('ReadResult', 'points errors')
+InputFormat = namedtuple('InputFormat', 'separator columns header')
 Analysis = namedtuple('Analysis', 'points duplicates conflicts')
 MAX_INPUT = 100000
 MAX_CREATE = 20000
@@ -153,13 +154,27 @@ def split_line(line, separator):
     return fields
 
 
-def detect_columns(path):
+def _open_survey(path):
+    """Prefer UTF-8 (with or without BOM), falling back to Windows-1252.
+
+    Validate in bounded chunks before yielding any rows: an accent near the
+    end of a file must not leave partially parsed results or mixed encodings.
+    """
+    encoding = 'utf-8-sig'
+    try:
+        with codecs.open(path, 'r', encoding) as stream:
+            while stream.read(65536):
+                pass
+    except UnicodeDecodeError:
+        encoding = 'cp1252'
+    return codecs.open(path, 'r', encoding)
+
+
+def _header_columns(first):
     aliases = (
         ('X', 'E', 'ESTE', 'LESTE', 'EASTING', 'X_LESTE', 'X_ESTE'),
         ('Y', 'N', 'NORTE', 'NORTHING', 'Y_NORTE'),
         ('Z', 'COTA', 'ELEVACAO', 'ELEVAÇÃO', 'ELEVATION', 'Z_COTA'))
-    with codecs.open(path, 'r', 'utf-8-sig') as stream:
-        first = next((line for line in stream if line.strip()), '')
     for separator in (';', ',', '\t'):
         try:
             names = [s.strip().upper() for s in split_line(first, separator)]
@@ -169,6 +184,69 @@ def detect_columns(path):
                    for group in aliases]
         if min(columns) >= 0 and len(set(columns)) == 3:
             return separator, columns
+    return None
+
+
+def detect_columns(path):
+    """Recognize named E/N/Z columns (legacy header-only API)."""
+    with _open_survey(path) as stream:
+        first = next((line for line in stream if line.strip()), '')
+    return _header_columns(first)
+
+
+def detect_format(path):
+    """Detect delimiters and common headerless survey exports conservatively.
+
+    UTM layouts are suggestions in metres: require an unambiguous northing
+    above 1,000,000 and agreement across up to 32 nonblank rows. Unknown
+    layouts leave columns/header unset for manual configuration in the UI.
+    """
+    lines = []
+    with _open_survey(path) as stream:
+        for line in stream:
+            if line.strip():
+                lines.append(line.rstrip('\r\n'))
+                if len(lines) == 32:
+                    break
+    if not lines:
+        return None
+    detected = _header_columns(lines[0])
+    if detected:
+        return InputFormat(detected[0], detected[1], True)
+    # Check explicit field separators before commas that may be decimals.
+    for separator in (';', '\t', ','):
+        try:
+            rows = [split_line(line, separator) for line in lines]
+        except ValueError:
+            continue
+        width = len(rows[0])
+        if width < 3 or any(len(row) != width for row in rows):
+            continue
+        numeric_rows = []
+        for row in rows:
+            values = []
+            for field in row:
+                try:
+                    values.append(number(field))
+                except ValueError:
+                    values.append(None)
+            numeric_rows.append(values)
+        # E,N,Z; ID,E,N,Z; ID,N,E,Z; ID,Z,description,N,E (or E,N).
+        matches = []
+        for columns in ((0, 1, 2), (1, 2, 3), (2, 1, 3), (4, 3, 1), (3, 4, 1)):
+            if max(columns) >= width:
+                continue
+            coordinates = [[row[i] for i in columns] for row in numeric_rows]
+            if all(e is not None and n is not None and z is not None
+                   and 100000 <= e <= 900000 and 1000000 < n <= 10000000
+                   and -12000 <= z <= 12000 for e, n, z in coordinates):
+                matches.append(list(columns))
+        if len(matches) == 1:
+            return InputFormat(separator, matches[0], False)
+        # Plain numeric triples retain the established E,N,Z convention.
+        if width == 3 and all(all(v is not None for v in row) for row in numeric_rows):
+            return InputFormat(separator, [0, 1, 2], False)
+        return InputFormat(separator, None, None)
     return None
 
 
@@ -182,7 +260,7 @@ def read_points(path, separator=';', columns=(0, 1, 2), header=True, factor=1.0)
     points, errors = [], []
     skipped_header = False
     count = 0
-    with codecs.open(path, 'r', 'utf-8-sig') as stream:
+    with _open_survey(path) as stream:
         for line_number, line in enumerate(stream, 1):
             if not line.strip():
                 continue

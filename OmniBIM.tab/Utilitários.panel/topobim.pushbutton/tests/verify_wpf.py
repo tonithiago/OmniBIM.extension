@@ -8,13 +8,19 @@ from __future__ import unicode_literals
 import os
 import sys
 import types
+import codecs
+import tempfile
 import clr
 
 clr.AddReference('PresentationFramework')
 clr.AddReference('PresentationCore')
 clr.AddReference('WindowsBase')
 clr.AddReference('pyRevitLabs.IronPython.Wpf')
-import wpf
+try:
+    import wpf
+except ImportError:
+    # CPython's standard library lacks IronPython's wpf.py forwarding module.
+    import _wpf as wpf
 from System import Math, Action
 from System.Windows import Window, Size, Rect, Visibility
 from System.Windows.Interop import WindowInteropHelper
@@ -116,6 +122,45 @@ assert window.FloorCoordinates.SelectedIndex == 2
 assert window.floor_settings() is None
 assert window.FloorPanel.Visibility == Visibility.Collapsed
 render(window, 'entrada.png')
+
+# Exercise file selection with real WPF controls, including switching formats.
+original_dialog = ui.OpenFileDialog
+handle, input_path = tempfile.mkstemp(suffix='.csv')
+os.close(handle)
+try:
+    ui.OpenFileDialog = lambda: Record(FileName=input_path, ShowDialog=lambda owner: True)
+    with codecs.open(input_path, 'w', 'utf-8') as stream:
+        stream.write('JS4,20.272,,9845213.7910,784842.0090,\n'
+                     'V1,20.256,,9845226.7744,784851.2066,\n'
+                     '1,19.882,PT,9845250.3357,784841.6984,\n')
+    window.choose_file(None, None)
+    assert window.Separator.SelectedIndex == 1
+    assert window.Header.IsChecked == False
+    assert [c.Text for c in (window.EastColumn, window.NorthColumn, window.ZColumn)] == ['5', '4', '2']
+    window.load_source()
+    assert window.ready()
+    assert len(window.analysis.points) == 3
+    assert window.analysis.points[0] == core.Point(784842.009, 9845213.791, 20.272)
+    with codecs.open(input_path, 'w', 'utf-8') as stream:
+        stream.write('JS1,9852066.2330,791133.7060,17.698,,\n')
+    window.choose_file(None, None)
+    assert window.Header.IsChecked == False
+    assert [c.Text for c in (window.EastColumn, window.NorthColumn, window.ZColumn)] == ['3', '2', '4']
+    with codecs.open(input_path, 'w', 'utf-8') as stream:
+        stream.write('ID,A,B,C\n1,2,3,4\n')
+    window.choose_file(None, None)
+    assert [c.Text for c in (window.EastColumn, window.NorthColumn, window.ZColumn)] == ['1', '2', '3']
+    assert 'Colunas não identificadas' in window.Status.Text
+    ui.OpenFileDialog = lambda: Record(
+        FileName=os.path.join(ROOT, 'bruto_para_coverter', 'samples', 'terreno_exemplo_ENZ.csv'),
+        ShowDialog=lambda owner: True)
+    window.choose_file(None, None)
+    assert window.Separator.SelectedIndex == 0
+    assert window.Header.IsChecked == True
+    assert [c.Text for c in (window.EastColumn, window.NorthColumn, window.ZColumn)] == ['1', '2', '3']
+finally:
+    ui.OpenFileDialog = original_dialog
+    os.remove(input_path)
 
 window.csv_path = os.path.join(ROOT, 'bruto_para_coverter', 'samples', 'terreno_exemplo_ENZ.csv')
 window.load_source()
@@ -388,10 +433,31 @@ service.read_cad = lambda *args: [service.CadPoint(core.Point(0, 0, 1), 'Terreno
 window.load_source()
 assert window.Layers.SelectedItems.Count == 0
 assert not window.ready()
-window.Layers.SelectedItems.Add('Terreno')
-window.apply_layers(None, None)
+assert window.CadReadSummary.Text == 'DWG lido: 4 vértices em 2 camada(s). 0 marcada(s).'
+assert 'DWG lido.' in window.PreviewNote.Text
+window.go_next(None, None)
+assert window.Tabs.SelectedIndex == 1
+assert window.analysis is None
+assert 'Marque as camadas' in window.Status.Text
+window.Layers.BringIntoView()
+layout(window)
+window.ReviewScroll.ScrollToTop()
+render(window, 'dwg-aguardando-camadas.png')
+layer_boxes = [c for c in descendants(window.Layers) if isinstance(c, CheckBox)]
+terrain_box = next(c for c in layer_boxes if c.Content == 'Terreno')
+terrain_box.IsChecked = True
+layout(window)
+assert list(window.Layers.SelectedItems) == ['Terreno']
+assert '1 marcada(s)' in window.CadReadSummary.Text
+window.PreviewMode.SelectedIndex = 0
+window.PreviewMode.SelectedIndex = 1
+assert 'DWG lido.' in window.PreviewNote.Text
+window.go_next(None, None)
+assert window.Tabs.SelectedIndex == 1
 assert window.ready()
+assert len(window.analysis.points) == 3
 assert not window.analysis.conflicts
+render(window, 'dwg-terreno-aplicado.png')
 service.needs_location = lambda doc, analysis: True
 window.Tabs.SelectedIndex = 2
 assert window.GeoMode.SelectedIndex == 1
@@ -400,6 +466,11 @@ render(window, 'criacao-origem.png')
 window.Layers.SelectedItems.Add('Equipamentos')
 assert not window.ready()
 assert not window.GeoConsent.IsChecked
+window.Tabs.SelectedIndex = 1
+window.Layers.SelectedItems.Remove('Equipamentos')
+window.apply_layers(None, None)
+assert window.ready()
+assert len(window.analysis.points) == 3
 window.report = dict(ReviewViewId='42')
 window.view_created(None,None)
 assert window.requested_review_view_id == '42'
@@ -410,6 +481,153 @@ for origin in (0, 780000, 9840000, -780000):
         value = origin + index * 0.0005
         assert core.grid_key(value) == Math.Round(value, 3), repr(value)
 print('WPF state, events, XAML, rendering and .NET rounding: OK')
+
+# Recover a zero Revit origin from an already-UTM DWG, including a CAD read
+# in the current/local coordinate frame. No real document is changed here.
+saved_geography = service.geographic_settings
+saved_transform = service.internal_to_shared
+saved_metres = service.metres
+saved_read_cad = service.read_cad
+saved_needs_location = service.needs_location
+saved_create = service.create
+try:
+    service.geographic_settings = original_geographic_settings
+    service.internal_to_shared = lambda location: Record(Origin=Record(X=0, Y=0, Z=25))
+    service.metres = lambda value: value
+    service.needs_location = lambda doc, analysis: False
+    utm_points = [core.Point(780000, 9840000, 20), core.Point(780120, 9840000, 23),
+                  core.Point(780000, 9840060, 21)]
+    local_points = [core.Point(p.E-780000, p.N-9840000, p.Z) for p in utm_points]
+    reads = []
+    def read_utm_cad(doc, cad_id, original):
+        reads.append(original)
+        points = utm_points if original else local_points
+        return [service.CadPoint(p, 'Terreno') for p in points] + [
+            service.CadPoint(core.Point(0, 0, 99), 'Equipamentos')]
+    service.read_cad = read_utm_cad
+    for coordinates in (0, 1):
+        automatic = ui.TopoBimWindow(Record(Document=doc), logger)
+        automatic.SourceMode.SelectedIndex = 1
+        automatic.CadCoordinates.SelectedIndex = coordinates
+        automatic.load_source()
+        automatic.Layers.SelectedItems.Add('Terreno')
+        automatic.apply_layers(None, None)
+        automatic.Tabs.SelectedIndex = 2
+        assert automatic.GeoMode.SelectedIndex == 1
+        assert automatic.CadCoordinates.SelectedIndex == 0
+        assert list(automatic.analysis.points) == utm_points
+        assert list(automatic.Layers.SelectedItems) == ['Terreno']
+        assert automatic.automatic_utm is not None
+        assert automatic.GeoConsent.Visibility == Visibility.Collapsed
+        assert not automatic.GeoConsent.IsChecked
+        assert abs(float(automatic.AnchorE.Text)-780040) < 1e-8
+        assert abs(float(automatic.AnchorN.Text)-9840020) < 1e-8
+        assert float(automatic.AnchorZ.Text) == 25
+        assert 'automaticamente' in automatic.GeographicPreview.Text
+        assert not automatic.Reviewed.IsChecked
+        automatic.Reviewed.IsChecked = True
+        automatic.prepare_location()
+        assert automatic.Reviewed.IsChecked
+        assert automatic.creation_settings()['AutomaticUtm']['Reprojection'] == False
+        render(automatic, 'criacao-utm-automatico.png')
+        # Reaching the adapter proves automatic correction does not require
+        # the extra checkbox reserved for manually entered origins.
+        class ReachedCreate(Exception):
+            pass
+        calls = []
+        def capture_create(doc, analysis, type_id, level_id, settings, source, floor_settings):
+            calls.append((list(analysis.points), settings, source))
+            raise ReachedCreate()
+        service.create = capture_create
+        try:
+            automatic.create()
+            assert False, 'Expected the simulated creation adapter'
+        except ReachedCreate:
+            pass
+        assert len(calls) == 1
+        assert calls[0][0] == utm_points
+        assert calls[0][1]['AutomaticUtm']['Reprojection'] == False
+        assert calls[0][2].endswith('WCS original')
+        assert automatic.Next.IsEnabled
+        # Editing the generated origin returns to the explicit-origin flow.
+        automatic.AnchorE.Text = '780045'
+        assert automatic.automatic_utm is None
+        assert automatic.GeoConsent.Visibility == Visibility.Visible
+        assert not automatic.Reviewed.IsChecked
+        automatic.Close()
+    assert reads == [True, False, True]
+    service.read_cad = lambda *args: [service.CadPoint(p, 'Terreno') for p in local_points]
+    unresolved = ui.TopoBimWindow(Record(Document=doc), logger)
+    unresolved.SourceMode.SelectedIndex = 1
+    unresolved.CadCoordinates.SelectedIndex = 1
+    unresolved.load_source()
+    unresolved.Layers.SelectedItems.Add('Terreno')
+    unresolved.apply_layers(None, None)
+    old_analysis = unresolved.analysis
+    old_source = unresolved.source
+    try:
+        unresolved.prepare_location()
+        assert False, 'Local coordinates cannot supply UTM control'
+    except ui.geo.InvalidUtmCoordinates:
+        pass
+    assert unresolved.analysis is old_analysis
+    assert unresolved.source == old_source
+    assert unresolved.CadCoordinates.SelectedIndex == 1
+    assert unresolved.automatic_utm is None
+    unresolved.Close()
+finally:
+    service.geographic_settings = saved_geography
+    service.internal_to_shared = saved_transform
+    service.metres = saved_metres
+    service.read_cad = saved_read_cad
+    service.needs_location = saved_needs_location
+    service.create = saved_create
+print('WPF automatic UTM origin and original DWG recovery: OK')
+
+# CSV floors must work without any linked DWG and invalidate stale selections.
+service.needs_location = lambda doc, analysis: False
+csv_window = ui.TopoBimWindow(Record(Document=doc), logger)
+csv_window.csv_path = os.path.join(ROOT, 'samples', 'pisos_layers.csv')
+csv_window.load_source()
+csv_window.FloorCad.ItemsSource = []
+csv_window.CreateFloors.IsChecked = True
+csv_window.FloorSource.SelectedIndex = 1
+csv_window.FloorLayerColumn.Text = '4'
+csv_window.FloorContourColumn.Text = '5'
+assert csv_window.FloorDwgPanel.Visibility == Visibility.Collapsed
+assert csv_window.FloorCsvPanel.Visibility == Visibility.Visible
+csv_window.find_floors(None, None)
+assert len(csv_window.floor_rows) == 2
+csv_row = next(r for r in csv_window.floor_rows if r.Layer == 'PAVIMENTACAO')
+assert len(csv_row.Regions[0].holes) == 1
+csv_row.Enabled = True
+csv_row.SelectedType = floor_type_b
+csv_config = csv_window.floor_settings()
+assert csv_config['Source'] == 'CSV'
+assert 'CadId' not in csv_config
+assert csv_config['Layers'] == [('PAVIMENTACAO', 11)]
+assert csv_config['Csv']['layer_column'] == 3
+assert csv_config['Csv']['contour_column'] == 4
+layout(csv_window)
+csv_window.FloorSource.BringIntoView()
+render(csv_window, 'pisos-csv-origem.png')
+csv_window.FloorTable.BringIntoView()
+render(csv_window, 'pisos-csv-layers.png')
+csv_window.Reviewed.IsChecked = True
+csv_window.FloorContourColumn.Text = ''
+assert not csv_window.Reviewed.IsChecked
+assert csv_window.floor_rows == []
+csv_window.FloorSource.SelectedIndex = 0
+assert csv_window.FloorCsvPanel.Visibility == Visibility.Collapsed
+assert csv_window.FloorDwgPanel.Visibility == Visibility.Visible
+assert csv_window.floor_rows == []
+csv_window.FloorSource.SelectedIndex = 1
+csv_window.FloorContourColumn.Text = '5'
+csv_window.find_floors(None, None)
+csv_window.Units.SelectedIndex = 1
+assert csv_window.analysis is None
+assert csv_window.floor_rows == []
+print('WPF CSV floor source, layer selection without DWG and invalidation: OK')
 
 # Presentation QA uses real WPF controls with a simulated host. Raster DPI checks
 # are not a substitute for moving a live Revit window between physical monitors.

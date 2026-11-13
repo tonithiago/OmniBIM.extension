@@ -8,6 +8,8 @@ import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import topobim_core as core
+import topobim_geo as geo
 
 
 class Record(object):
@@ -299,6 +301,151 @@ class SiteAdapterTests(unittest.TestCase):
         values = self.service.geographic_settings(self.doc, self.settings)
         self.assertEqual(-1.451637, values['Latitude'])
         self.assertEqual(-48.497723, values['Longitude'])
+
+    def utm_survey(self):
+        return core.analyze([core.Point(780000, 9840000, 20),
+                             core.Point(780120, 9840000, 23),
+                             core.Point(780000, 9840060, 21)])
+
+    def test_invalid_origin_is_recovered_from_utm_without_changing_points(self):
+        self.doc.ActiveProjectLocation = self.doc.default
+        self.doc.default.position = Position(0, 0, 25/0.3048, 0.37)
+        analysis = self.utm_survey()
+        before = list(analysis.points)
+        original_settings = dict(self.settings)
+        repaired = self.service.automatic_utm_settings(self.doc, analysis, self.settings)
+        self.assertTrue(repaired['NewLocation'])
+        self.assertAlmostEqual(780040, repaired['East'])
+        self.assertAlmostEqual(9840020, repaired['North'])
+        self.assertAlmostEqual(25, repaired['Elevation'])
+        self.assertFalse(repaired['AutomaticUtm']['Reprojection'])
+        self.assertEqual(before, analysis.points)
+        self.assertEqual(original_settings, self.settings)
+        self.assertEqual(0, self.doc.default.position.EastWest)
+        self.assertIsNone(self.service.automatic_utm_settings(self.doc, analysis, repaired))
+        self.service.use_default_location(self.doc, repaired)
+        self.assertAlmostEqual(780040, self.service.metres(self.doc.ActiveProjectLocation.position.EastWest))
+        self.assertEqual(before, analysis.points)
+
+    def test_valid_origin_and_manual_geography_are_preserved(self):
+        self.assertIsNone(self.service.automatic_utm_settings(self.doc, self.utm_survey(), self.settings))
+        self.settings.update(GeographicMode='manual', Latitude=-1, Longitude=-48)
+        self.doc.ActiveProjectLocation = self.doc.default
+        self.assertIsNone(self.service.automatic_utm_settings(self.doc, self.utm_survey(), self.settings))
+
+    def test_invalid_explicit_origin_keeps_vertical_reference(self):
+        self.settings.update(NewLocation=True, East=0, North=0, Elevation=12.5)
+        repaired = self.service.automatic_utm_settings(self.doc, self.utm_survey(), self.settings)
+        self.assertEqual(12.5, repaired['Elevation'])
+        self.assertEqual([0, 0, 12.5], repaired['AutomaticUtm']['PreviousOriginMetres'])
+
+    def test_local_or_mixed_coordinates_are_not_invented_as_utm(self):
+        self.doc.ActiveProjectLocation = self.doc.default
+        local = core.analyze([core.Point(0, 0, 20), core.Point(100, 0, 22), core.Point(0, 100, 25)])
+        mixed = core.analyze(self.utm_survey().points + [core.Point(100, 100, 20)])
+        for analysis in (local, mixed):
+            self.assertRaises(geo.InvalidUtmCoordinates, self.service.automatic_utm_settings,
+                              self.doc, analysis, self.settings)
+        self.assertEqual(0, self.doc.default.position.EastWest)
+
+    def test_invalid_crs_is_not_silently_replaced(self):
+        self.doc.ActiveProjectLocation = self.doc.default
+        for change in (dict(Datum='SAD69'), dict(Zone=0), dict(Hemisphere='?')):
+            self.assertRaises(ValueError, self.service.automatic_utm_settings,
+                              self.doc, self.utm_survey(), dict(self.settings, **change))
+
+
+class CadReferenceTests(unittest.TestCase):
+    def setUp(self):
+        self.service = load_adapter()
+        self.doc = Document()
+        self.doc.IsModifiable = False
+        self.cad = Record(IsLinked=True, Document=self.doc, Id=42)
+        self.transactions = []
+        self.calls = []
+        self.source = Position(303400/0.3048, 9883900/0.3048, 12, 0.2)
+        self.initial = self.doc.ActiveProjectLocation.position
+        self.fail_always = False
+        self.rollback_fails = False
+        test = self
+
+        class Transaction(object):
+            def __init__(self, doc, *name):
+                self.kind = 'transaction' if name else 'subtransaction'
+                self.status = None
+                self.disposed = False
+                test.transactions.append(self)
+
+            def Start(self):
+                self.before = test.doc.ActiveProjectLocation.position
+                self.latitude = test.doc.SiteLocation.Latitude
+                self.status = 'Started'
+                return self.status
+
+            def GetStatus(self):
+                return self.status
+
+            def RollBack(self):
+                test.doc.ActiveProjectLocation.position = self.before
+                test.doc.SiteLocation.Latitude = self.latitude
+                self.status = 'Failed' if test.rollback_fails else 'RolledBack'
+                return self.status
+
+            def Dispose(self):
+                self.disposed = True
+
+        def acquire(element_id):
+            self.calls.append(element_id)
+            position = self.doc.ActiveProjectLocation.position
+            self.doc.SiteLocation.Latitude = 0.5
+            if self.fail_always or position.__dict__ == self.source.__dict__:
+                raise ValueError('Cannot acquire')
+            self.doc.ActiveProjectLocation.position = self.source
+
+        self.doc.AcquireCoordinates = acquire
+        self.doc.ResetSharedCoordinates = lambda: setattr(
+            self.doc.ActiveProjectLocation, 'position', Position(0, 0, 0, 0))
+        self.service.DB.Transaction = Transaction
+        self.service.DB.SubTransaction = Transaction
+        self.service.DB.TransactionStatus = Record(Started='Started', RolledBack='RolledBack')
+
+    def assert_rolled_back(self, initial):
+        self.assertIs(initial, self.doc.ActiveProjectLocation.position)
+        self.assertEqual(0, self.doc.SiteLocation.Latitude)
+        self.assertTrue(all(t.status == 'RolledBack' and t.disposed for t in self.transactions))
+
+    def test_native_frame_survives_rollback_without_changing_site(self):
+        frame = self.service.cad_to_original_feet(self.cad)
+        self.assert_rolled_back(self.initial)
+        self.assertEqual([42], self.calls)
+        self.assertAlmostEqual(303400, self.service.metres(frame.OfPoint(XYZ.Zero).X))
+        self.assertAlmostEqual(9883900, self.service.metres(frame.OfPoint(XYZ.Zero).Y))
+        self.assertAlmostEqual(math.cos(0.2), frame.BasisX.X)
+
+    def test_already_acquired_frame_retries_and_restores_original(self):
+        self.doc.ActiveProjectLocation.position = self.source
+        frame = self.service.cad_to_original_feet(self.cad)
+        self.assert_rolled_back(self.source)
+        self.assertEqual([42, 42], self.calls)
+        self.assertAlmostEqual(self.source.EastWest, frame.Origin.X)
+
+    def test_failed_native_acquisition_rolls_back_both_attempts(self):
+        self.fail_always = True
+        self.assertRaises(ValueError, self.service.cad_to_original_feet, self.cad)
+        self.assert_rolled_back(self.initial)
+        self.assertEqual(2, len(self.transactions))
+
+    def test_existing_transaction_uses_subtransaction(self):
+        self.doc.IsModifiable = True
+        self.service.cad_to_original_feet(self.cad)
+        self.assert_rolled_back(self.initial)
+        self.assertEqual('subtransaction', self.transactions[0].kind)
+
+    def test_rollback_failure_does_not_return_a_frame_or_retry(self):
+        self.rollback_fails = True
+        self.assertRaises(ValueError, self.service.cad_to_original_feet, self.cad)
+        self.assertEqual(1, len(self.transactions))
+        self.assertTrue(self.transactions[0].disposed)
 
 
 if __name__ == '__main__':

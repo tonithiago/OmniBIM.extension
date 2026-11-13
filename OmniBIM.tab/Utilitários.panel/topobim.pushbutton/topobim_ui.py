@@ -18,8 +18,10 @@ from Microsoft.Win32 import OpenFileDialog, SaveFileDialog
 from pyrevit import forms, DB
 import topobim_core as core
 import topobim_revit as service
+import topobim_geo as geo
 import topobim_floors as floors
 import topobim_floor_geometry as floor_geometry
+import topobim_floor_csv as floor_csv
 from topobim_view3d import TerrainView
 from topobim_measure_ui import MeasurementTools
 
@@ -124,6 +126,7 @@ class TopoBimWindow(forms.WPFWindow):
         self.source = ''
         self.cad = None
         self.analysis = None
+        self.automatic_utm = None
         self.preview_values = None
         self.preview_boundary = []
         self.read_errors = []
@@ -170,6 +173,9 @@ class TopoBimWindow(forms.WPFWindow):
         self.ReviewIssues.Click += self.review_issues
         self.CreateFloors.Checked += self.floor_settings_changed
         self.CreateFloors.Unchecked += self.floor_settings_changed
+        self.FloorSource.SelectionChanged += self.floor_source_changed
+        self.FloorLayerColumn.TextChanged += self.floor_source_changed
+        self.FloorContourColumn.TextChanged += self.floor_source_changed
         self.FloorCad.SelectionChanged += self.floor_source_changed
         self.FloorCoordinates.SelectionChanged += self.floor_source_changed
         self.FloorLevel.SelectionChanged += self.floor_settings_changed
@@ -215,6 +221,9 @@ class TopoBimWindow(forms.WPFWindow):
     def floor_source_changed(self, sender, event):
         if self.busy or self.created:
             return
+        csv_mode = self.FloorSource.SelectedIndex == 1
+        self.FloorCsvPanel.Visibility = Visibility.Visible if csv_mode else Visibility.Collapsed
+        self.FloorDwgPanel.Visibility = Visibility.Collapsed if csv_mode else Visibility.Visible
         self.floor_rows = []
         self.floor_issues = []
         self.FloorTable.ItemsSource = None
@@ -226,9 +235,11 @@ class TopoBimWindow(forms.WPFWindow):
         def identify():
             self.floor_source_changed(None, None)
             choice = self.FloorCad.SelectedItem
-            if choice is None:
+            if self.FloorSource.SelectedIndex == 1:
+                areas, issues = floor_csv.read_areas(**self.floor_csv_settings())
+            elif choice is None:
                 raise ValueError('Vincule um DWG de modelo com os contornos de piso e reabra o TOPOBIM.')
-            if self.FloorCoordinates.SelectedIndex == 2:
+            elif self.FloorCoordinates.SelectedIndex == 2:
                 if self.analysis is None:
                     raise ValueError('Leia e aplique os pontos do levantamento antes de identificar os pisos.')
                 areas, issues = floors.read_registered_areas(self.doc, choice.Id, self.analysis.points)
@@ -246,6 +257,21 @@ class TopoBimWindow(forms.WPFWindow):
             self.FloorIssues.Text = '\n'.join(issues)
         self.guard(identify)
 
+    def floor_csv_settings(self):
+        if self.SourceMode.SelectedIndex != 0 or not self.csv_path or self.analysis is None:
+            raise ValueError('Selecione e leia o CSV/TXT do levantamento na aba Origem antes de identificar os pisos.')
+        contour = self.FloorContourColumn.Text.strip()
+        try:
+            layer_column = int(self.FloorLayerColumn.Text)-1
+            contour_column = int(contour)-1 if contour else None
+        except ValueError:
+            raise ValueError('Informe o número da coluna de layer e, se necessário, da coluna de contorno (começando em 1).')
+        return dict(path=self.csv_path, separator=(';', ',', '\t')[self.Separator.SelectedIndex],
+                    columns=tuple(int(c.Text)-1 for c in (self.EastColumn, self.NorthColumn, self.ZColumn)),
+                    header=self.Header.IsChecked == True,
+                    factor=(1.0, 0.01, 0.001, 0.3048)[self.Units.SelectedIndex],
+                    layer_column=layer_column, contour_column=contour_column)
+
     def floor_settings(self):
         self.FloorTable.CommitEdit()
         if self.CreateFloors.IsChecked != True:
@@ -256,6 +282,12 @@ class TopoBimWindow(forms.WPFWindow):
         if any(row.SelectedType is None for row in selected):
             raise ValueError('Escolha o tipo de piso de cada layer marcado.')
         level, cad = self.FloorLevel.SelectedItem, self.FloorCad.SelectedItem
+        if level is None:
+            raise ValueError('Escolha o nível de referência dos pisos.')
+        if self.FloorSource.SelectedIndex == 1:
+            return dict(Source='CSV', Csv=self.floor_csv_settings(), Original=True,
+                        LevelId=level.Id, Layers=[(r.Layer, r.SelectedType.Id) for r in selected],
+                        Signature=floors.signature({r.Layer: r.Regions for r in selected}, [r.Layer for r in selected]))
         if level is None or cad is None:
             raise ValueError('Escolha o DWG e o nível de referência dos pisos.')
         if self.FloorCoordinates.SelectedIndex == 2 and self.analysis is None:
@@ -276,6 +308,8 @@ class TopoBimWindow(forms.WPFWindow):
 
     def reset_review(self):
         self.analysis = None
+        self.automatic_utm = None
+        self.GeoConsent.Visibility = Visibility.Visible
         self.preview_values = None
         self.preview_boundary = []
         self.geometry_error = None
@@ -316,6 +350,10 @@ class TopoBimWindow(forms.WPFWindow):
             return
         self.Reviewed.IsChecked = False
         self.GeoConsent.IsChecked = False
+        if sender in (self.GeoMode, self.AnchorE, self.AnchorN, self.AnchorZ,
+                      self.Datum, self.Zone, self.Hemisphere, self.GeographicMode):
+            self.automatic_utm = None
+            self.GeoConsent.Visibility = Visibility.Visible
         self.AnchorPanel.Visibility = Visibility.Visible if self.GeoMode.SelectedIndex == 1 else Visibility.Collapsed
         self.ManualGeography.Visibility = Visibility.Visible if self.GeographicMode.SelectedIndex == 1 else Visibility.Collapsed
         self.update_geography()
@@ -330,6 +368,8 @@ class TopoBimWindow(forms.WPFWindow):
                         GeographicMode='manual' if self.GeographicMode.SelectedIndex == 1 else 'utm')
         if settings['GeographicMode'] == 'manual':
             settings.update(Latitude=core.number(self.Latitude.Text), Longitude=core.number(self.Longitude.Text))
+        if self.automatic_utm is not None:
+            settings['AutomaticUtm'] = self.automatic_utm
         return settings
 
     def update_geography(self):
@@ -341,6 +381,8 @@ class TopoBimWindow(forms.WPFWindow):
             self.GeographicPreview.Text = ('Latitude: {Latitude:.8f}° · Longitude: {Longitude:.8f}°\n'
                                           'Origem compartilhada: E {East:.3f} · N {North:.3f} · Z {Elevation:.3f} m\n'
                                           'Os dois pontos base ficarão juntos na cota da superfície do terreno.').format(**geographic)
+            if self.automatic_utm is not None:
+                self.GeographicPreview.Text += '\nOrigem UTM recuperada automaticamente do levantamento. Pontos e cotas preservados; confira a zona e o hemisfério na Conferência.'
         except (ValueError, OverflowError) as error:
             self.GeographicPreview.Text = 'Confira a localização: ' + core.text_type(error)
 
@@ -354,18 +396,29 @@ class TopoBimWindow(forms.WPFWindow):
             self.csv_path = dialog.FileName
             self.FileLabel.Text = self.csv_path
             self.input_changed(None, None)
-            detected = core.detect_columns(self.csv_path)
-            if detected:
-                self.busy = True
-                try:
-                    separator, columns = detected
+            detected = core.detect_format(self.csv_path)
+            self.busy = True
+            try:
+                columns = (0, 1, 2)
+                self.Header.IsChecked = False
+                if detected:
+                    separator = detected.separator
                     self.Separator.SelectedIndex = (';', ',', '\t').index(separator)
-                    for field, index in zip((self.EastColumn, self.NorthColumn, self.ZColumn), columns):
-                        field.Text = str(index + 1)
-                    self.Header.IsChecked = True
-                finally:
-                    self.busy = False
-            self.Status.Text = 'Arquivo selecionado. Confira colunas e unidades antes de ler.'
+                    if detected.columns is not None:
+                        columns = detected.columns
+                    self.Header.IsChecked = detected.header is True
+                for field, index in zip((self.EastColumn, self.NorthColumn, self.ZColumn), columns):
+                    field.Text = str(index + 1)
+                layer, contour = floor_csv.detect_groups(self.csv_path,
+                    (';', ',', '\t')[self.Separator.SelectedIndex], self.Header.IsChecked == True)
+                self.FloorLayerColumn.Text = str(layer+1) if layer is not None else ''
+                self.FloorContourColumn.Text = str(contour+1) if contour is not None else ''
+            finally:
+                self.busy = False
+            if detected and detected.columns is not None:
+                self.Status.Text = 'Formato identificado. Confira colunas e unidade antes de ler.'
+            else:
+                self.Status.Text = 'Colunas não identificadas. Configure colunas, cabeçalho, separador e unidade antes de ler.'
         self.guard(choose)
 
     def read_source(self, sender, event):
@@ -397,14 +450,24 @@ class TopoBimWindow(forms.WPFWindow):
                 self.LayerPanel.Visibility = Visibility.Visible
             finally:
                 self.busy = False
-            self.Status.Text = 'Marque uma ou mais camadas do levantamento e aplique a seleção.'
+            self.pending_layers()
         self.Tabs.SelectedIndex = 1
+
+    def pending_layers(self):
+        count = self.Layers.SelectedItems.Count
+        self.CadReadSummary.Text = 'DWG lido: {0} vértices em {1} camada(s). {2} marcada(s).'.format(
+            len(self.cad), self.Layers.Items.Count, count)
+        instruction = ('Clique em Aplicar camadas selecionadas ou Continuar para visualizar o terreno.'
+                       if count else 'Marque as camadas de pontos ou curvas de nível e clique em Aplicar camadas selecionadas.')
+        self.PreviewNote.Text = 'DWG lido. ' + instruction
+        self.Quality.Text = 'Aguardando aplicação das camadas do DWG.'
+        self.Status.Text = instruction
 
     def layers_changed(self, sender, event):
         if self.busy or self.cad is None:
             return
         self.reset_review()
-        self.Status.Text = 'Seleção alterada. Clique em Aplicar camadas selecionadas.'
+        self.pending_layers()
 
     def apply_layers(self, sender, event):
         def apply():
@@ -463,7 +526,7 @@ class TopoBimWindow(forms.WPFWindow):
         conflicts = self.analysis.conflicts if self.analysis else []
         rows = core.occurrence_rows(self.read_errors, conflicts, self.geometry_error)
         if self.CreateFloors.IsChecked == True:
-            rows.extend(('DWG / pisos', issue, 'Confira os contornos e layers na aba Conferência.') for issue in self.floor_issues)
+            rows.extend(('Contornos / pisos', issue, 'Confira os contornos e layers na aba Conferência.') for issue in self.floor_issues)
         window = OccurrencesWindow(self, rows)
         window.ShowDialog()
         if window.reload_requested:
@@ -488,6 +551,44 @@ class TopoBimWindow(forms.WPFWindow):
             self.draw()
 
     def prepare_location(self):
+        settings = self.creation_settings()
+        try:
+            repaired = service.automatic_utm_settings(self.doc, self.analysis, settings)
+        except geo.InvalidUtmCoordinates:
+            if self.cad is None or self.CadCoordinates.SelectedIndex != 1:
+                raise
+            # A centred/moved CAD may have local shared coordinates even though
+            # its original geometry is UTM. Validate before replacing the review.
+            choice = self.CadFiles.SelectedItem
+            original = service.read_cad(self.doc, choice.Id, True)
+            selected = set(self.Layers.SelectedItems)
+            analysis = core.analyze([p.point for p in original if p.layer in selected])
+            repaired = service.automatic_utm_settings(self.doc, analysis, settings)
+            self.busy = True
+            try:
+                self.CadCoordinates.SelectedIndex = 0
+            finally:
+                self.busy = False
+            self.reset_review()
+            self.cad = original
+            self.source = 'DWG: {0} / WCS original'.format(choice.Label)
+            self.set_analysis([p.point for p in original if p.layer in selected])
+            self.floor_source_changed(None, None)
+            if repaired is not None:
+                repaired['AutomaticUtm']['Source'] = 'DWG WCS'
+        if repaired is not None:
+            self.busy = True
+            try:
+                self.GeoMode.SelectedIndex = 1
+                self.AnchorE.Text = '{0:.9f}'.format(float(repaired['East']))
+                self.AnchorN.Text = '{0:.9f}'.format(float(repaired['North']))
+                self.AnchorZ.Text = '{0:.9f}'.format(float(repaired['Elevation']))
+                self.AnchorPanel.Visibility = Visibility.Visible
+                self.automatic_utm = repaired['AutomaticUtm']
+                self.GeoConsent.Visibility = Visibility.Collapsed
+            finally:
+                self.busy = False
+            self.Status.Text = 'Origem UTM recuperada automaticamente. Confira a referência e crie o terreno.'
         if self.GeoMode.SelectedIndex == 0 and service.needs_location(self.doc, self.analysis):
             self.GeoMode.SelectedIndex = 1
             self.Status.Text = 'Terreno distante: confira e confirme as novas coordenadas de Terreno Padrão.'
@@ -499,6 +600,12 @@ class TopoBimWindow(forms.WPFWindow):
     def go_next(self, sender, event):
         if self.created:
             self.Close()
+        elif self.Tabs.SelectedIndex == 1 and self.cad is not None and self.analysis is None:
+            # Keep the review visible after applying; the next click advances.
+            if self.Layers.SelectedItems.Count:
+                self.apply_layers(sender, event)
+            else:
+                self.pending_layers()
         elif self.Tabs.SelectedIndex < 2:
             self.Tabs.SelectedIndex += 1
         else:
@@ -507,6 +614,7 @@ class TopoBimWindow(forms.WPFWindow):
     def create(self):
         if not self.ready():
             raise ValueError('Confira o levantamento e corrija os erros antes de criar.')
+        self.prepare_location()
         floor_settings = self.floor_settings()
         if self.Reviewed.IsChecked != True:
             raise ValueError('Marque a confirmação de conferência dos dados.')
@@ -514,7 +622,7 @@ class TopoBimWindow(forms.WPFWindow):
             self.prepare_location()
             raise ValueError('Foram sugeridas novas coordenadas para Terreno Padrão. Confira os valores e confirme a alteração.')
         new_location = self.GeoMode.SelectedIndex == 1
-        if new_location and self.GeoConsent.IsChecked != True:
+        if new_location and self.automatic_utm is None and self.GeoConsent.IsChecked != True:
             raise ValueError('Confirme a alteração da localização compartilhada.')
         topo_type, level = self.TopoTypes.SelectedItem, self.Levels.SelectedItem
         if topo_type is None or level is None:
@@ -582,6 +690,8 @@ class TopoBimWindow(forms.WPFWindow):
         self.PreviewHint.Text = ('Arraste: girar · Shift + arraste: mover · roda: zoom · duplo clique: enquadrar'
                                  if is_3d else 'Planta E/N · roda: zoom · arraste: mover · duplo clique: enquadrar')
         self.PreviewNote.Text = 'Leia o levantamento para visualizar o terreno em 3D.'
+        if self.cad is not None and self.analysis is None:
+            self.pending_layers()
         self.fit(sender, event)
 
     def resize_preview(self, sender, event):

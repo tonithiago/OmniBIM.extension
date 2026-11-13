@@ -10,6 +10,10 @@ import math
 from topobim_core import finite
 
 
+class InvalidUtmCoordinates(ValueError):
+    """Coordinates cannot be interpreted in the declared UTM reference."""
+
+
 def validate_latlon(latitude, longitude):
     if not finite(latitude) or not -90 <= latitude <= 90:
         raise ValueError('Latitude deve estar entre -90 e 90 graus.')
@@ -32,7 +36,7 @@ def utm_to_latlon(east, north, zone, hemisphere, datum):
     if hemisphere not in ('Sul', 'Norte'):
         raise ValueError('Hemisfério inválido.')
     if not finite(east) or not finite(north) or not (100000 <= east <= 900000 and 0 <= north <= 10000000):
-        raise ValueError('A origem não tem coordenadas UTM válidas. Confira E/N, zona, hemisfério e unidade, ou informe latitude/longitude manualmente para coordenadas locais.')
+        raise InvalidUtmCoordinates('A origem não tem coordenadas UTM válidas. Confira E/N, zona, hemisfério e unidade, ou informe latitude/longitude manualmente para coordenadas locais.')
     flattening = 1 / inverse_flattening
     n = flattening / (2 - flattening)
     eccentricity = math.sqrt(flattening * (2 - flattening))
@@ -62,8 +66,8 @@ def utm_to_latlon(east, north, zone, hemisphere, datum):
         latitude = updated
     latitude = math.degrees(latitude)
     if not -80.00000001 <= latitude <= 84.00000001:
-        raise ValueError('Latitude calculada fora da faixa UTM (-80 a 84 graus). Confira as coordenadas.')
+        raise InvalidUtmCoordinates('Latitude calculada fora da faixa UTM (-80 a 84 graus). Confira as coordenadas.')
     if (hemisphere == 'Sul' and latitude > 1e-8) or (hemisphere == 'Norte' and latitude < -1e-8):
-        raise ValueError('Coordenadas incompatíveis com o hemisfério informado.')
+        raise InvalidUtmCoordinates('Coordenadas incompatíveis com o hemisfério informado.')
     longitude = (longitude + 180) % 360 - 180
     return validate_latlon(latitude, longitude)

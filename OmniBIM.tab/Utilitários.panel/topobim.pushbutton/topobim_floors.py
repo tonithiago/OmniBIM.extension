@@ -7,6 +7,7 @@ from System.Collections.Generic import List
 from pyrevit import DB
 import topobim_core as core
 import topobim_floor_geometry as geom
+import topobim_floor_csv as floor_csv
 import topobim_revit as service
 
 
@@ -46,7 +47,8 @@ def read_areas(doc, element_id, original=True):
     cad = doc.GetElement(element_id)
     if not isinstance(cad, DB.ImportInstance) or cad.ViewSpecific:
         raise ValueError('Selecione um DWG de modelo, sem a opção Somente vista atual.')
-    output = cad.GetTransform().Inverse if original else service.internal_to_shared(doc.ActiveProjectLocation)
+    original_frame = service.cad_to_original_feet(cad)
+    output = original_frame if original else service.internal_to_shared(doc.ActiveProjectLocation)
     paths = {}
     count = [0]
 
@@ -100,7 +102,7 @@ def read_areas(doc, element_id, original=True):
                     if original:
                         flags.append(any(abs(p.Z) > 0.001 for p in vertices))
                     else:
-                        shared_to_wcs = cad.GetTransform().Inverse.Multiply(output.Inverse)
+                        shared_to_wcs = original_frame.Multiply(output.Inverse)
                         flags.append(any(abs(shared_to_wcs.OfPoint(DB.XYZ(service.feet(p.E),service.feet(p.N),service.feet(p.Z))).Z) > service.feet(0.001) for p in vertices))
                 result.elevated_regions[layer] = flags
             except ValueError as error:
@@ -139,13 +141,15 @@ def prepare(doc, settings):
     """Read before changing the site, preserving the reviewed shared frame."""
     if not settings:
         return None
-    if settings.get('RegisterSurvey'):
+    if settings.get('Source') == 'CSV':
+        areas, issues = floor_csv.read_areas(**settings['Csv'])
+    elif settings.get('RegisterSurvey'):
         areas, issues = read_registered_areas(doc, settings['CadId'], settings['SurveyPoints'])
     else:
         areas, issues = read_areas(doc, settings['CadId'], settings['Original'])
     layers = [name for name, type_id in settings['Layers']]
     if any(name not in areas for name in layers) or signature(areas, layers) != settings['Signature']:
-        raise ValueError('O DWG mudou desde a conferência. Identifique e confira as áreas novamente.')
+        raise ValueError('Os contornos de piso mudaram desde a conferência. Identifique e confira as áreas novamente.')
     prepared = dict(settings)
     prepared.update(Areas=areas, Issues=issues)
     if not settings['Original'] and not settings.get('RegisterSurvey'):
@@ -430,14 +434,19 @@ def create(doc, topo, settings):
             internal = (settings['InternalAreas'][layer][index] if 'InternalAreas' in settings
                         else internal_region(region, doc.ActiveProjectLocation))
             flags = getattr(areas, 'elevated_regions', {}).get(layer, [False]*len(areas[layer]))
-            from_cad = flags[index]
-            design = geom.contour_surface(internal) if from_cad else terrain_surface
+            from_contour = flags[index]
+            design = geom.contour_surface(internal) if from_contour else terrain_surface
             floor, report = create_one(doc, design, internal, type_id, settings['LevelId'])
             did_excavate = excavate(doc, topo, floor)
-            report.update(Layer=layer, CadId=str(settings['CadId']), Coordinates='WCS' if settings['Original'] else 'Shared',
-                          ContactFace='Top', Source='DWG closed contours', Diagnostics=issues,
-                          ElevationSource='DWG contour Z' if from_cad else 'Terrain surface (2D DWG)',
+            source = 'CSV' if settings.get('Source') == 'CSV' else 'DWG'
+            report.update(Layer=layer, Coordinates='WCS' if settings['Original'] else 'Shared',
+                          ContactFace='Top', Source=source+' closed contours', Diagnostics=issues,
+                          ElevationSource=source+' contour Z' if from_contour else 'Terrain surface (2D '+source+')',
                           ExcavatesTerrain=did_excavate)
+            if source == 'CSV':
+                report.update(CsvPath=settings['Csv']['path'], Coordinates='Survey shared coordinates')
+            else:
+                report['CadId'] = str(settings['CadId'])
             if settings.get('RegisterSurvey'):
                 report.update(Coordinates='Survey shared coordinates', Registration=areas.registration)
             comment = floor.get_Parameter(DB.BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS)

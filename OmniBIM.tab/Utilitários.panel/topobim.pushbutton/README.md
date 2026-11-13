@@ -28,13 +28,62 @@ O comando sincroniza apenas os arquivos deste botão, verifica as cópias por SH
 e guarda os arquivos anteriores em `%LOCALAPPDATA%/OmniBIM/backups`.
 Recarregar o pyRevit sozinho não copia alterações da pasta do GitHub para `AppData`.
 
+### Correção de fechamento ao identificar pisos CSV
+
+A validação de linhas e layers inválidos retorna o diagnóstico em funções
+separadas, sem acumular tratadores de exceção no laço do IronPython. Isso evita
+o estouro de pilha reproduzido ao selecionar IDs individuais dos pontos como
+coluna de layer. A mensagem orienta a escolher uma coluna que agrupe os vértices
+de cada área; layers inválidos continuam excluídos integralmente.
+
+`tests/run_ironpython.ps1 -StandardLibrary <pasta Lib do Python 2.7>` executa
+primeiro a regressão com 500 layers/linhas inválidos em uma thread com pilha de
+1 MiB, antes do aquecimento do interpretador. Use Windows PowerShell para netfx
+ou PowerShell 7 com `-STA` para netcore. Também executa os testes de núcleo e WPF
+com host simulado; não substitui a validação dentro do Revit.
+
+### Passos
+
+A leitura de DWGs vinculados recupera o WCS com a API nativa **Adquirir
+coordenadas**, inclusive quando o Revit centralizou o desenho e descartou o
+deslocamento da transformação da instância. A referência é copiada e a transação
+é sempre revertida: ler e conferir não altera as coordenadas do projeto nem o
+arquivo DWG. O mesmo procedimento atende os contornos dos pisos. Vínculos com
+múltiplas instâncias podem impedir a aquisição nativa e recebem diagnóstico.
+
+A leitura WCS preserva a escala de unidades da importação CAD ao retirar a
+translação e a rotação do vínculo. Isso evita tratar coordenadas de um DWG em
+metros como pés e reduzi-las por 0,3048, inclusive nas cotas e nos contornos dos
+pisos. A posição atual/compartilhada continua usando a transformação do Revit.
+
+Quando a origem do Revit não tem UTM válida e o levantamento já está em UTM,
+o TOPOBIM recupera automaticamente a origem a partir dos pontos selecionados,
+ao entrar em **Criação** ou clicar em **Criar terreno**. Os pontos e suas cotas
+não são reprojetados. A nova origem fica dentro do limite convexo do terreno,
+mantém a referência vertical anterior e usa a zona, o hemisfério e o datum
+declarados na **Conferência**. A alteração aparece na prévia de localização e
+no campo `Settings.AutomaticUtm` do relatório. A confirmação geral de criação
+continua válida; a confirmação adicional da origem é exigida apenas para
+coordenadas digitadas manualmente.
+
+Se a leitura usava a posição atual/local do DWG, tenta recuperar o WCS original
+das mesmas camadas antes de substituir os dados. Nesse caso, refaça a identificação
+dos pisos, se habilitados, para usar a mesma referência do terreno. Coordenadas
+locais sem referência conhecida, unidades incorretas e sistemas não suportados
+continuam recebendo diagnóstico; o plugin não escolhe outra zona ou uma cidade
+padrão para fabricar coordenadas UTM.
+
 1. Recarregue a extensão pelo **Reload** do pyRevit, ou reinicie o Revit 2026.
 2. Abra um projeto com nível e tipo de sólido topográfico.
 3. Acesse **OmniBIM > Utilitários > TOPOBIM**.
-4. Em **Entrada**, selecione CSV/TXT UTF-8 ou um DWG já vinculado/importado.
+4. Em **Entrada**, selecione CSV/TXT UTF-8 ou Windows-1252 (ANSI), ou um DWG já vinculado/importado. A leitura tenta UTF-8 primeiro e usa Windows-1252 automaticamente se houver bytes inválidos em UTF-8.
    Confira separador, unidade, cabeçalho e colunas antes de ler.
 5. Em **Conferência**, escolha e aplique as camadas do DWG. Nenhuma camada é
    selecionada automaticamente. Confira pontos, cotas, prévia e ocorrências.
+   A mensagem **DWG lido** informa os vértices e camadas encontrados; a prévia
+   aguarda a seleção das camadas de pontos ou curvas de nível do levantamento.
+   **Continuar** também aplica as camadas marcadas e mantém a conferência aberta
+   para revisar o terreno; clique novamente para avançar à criação.
    Em **Visualização do terreno**, alterne entre **Planta** e **Modelo 3D**.
    No 3D, arraste para girar, use Shift + arraste para deslocar e a roda para zoom.
    **Enquadrar** ou duplo clique restaura a vista inicial. A superfície é ilustrativa,
@@ -78,8 +127,18 @@ desativa um complemento C# previamente instalado.
 ## Regras preservadas e ajustes
 
 - Metros, centímetros, milímetros e pés; separadores `;`, vírgula e tabulação.
-  Cabeçalhos reconhecidos ajustam automaticamente as colunas; sem reconhecimento,
-  confira manualmente. Decimal com vírgula requer separador `;` ou tabulação.
+  Aceita ponto decimal com qualquer um desses separadores; decimal com vírgula
+  requer `;` ou tabulação (ou campos entre aspas quando o separador é vírgula).
+  Ao selecionar o arquivo, detecta o separador e os cabeçalhos E/N/Z reconhecidos.
+  Sem cabeçalho, reconhece triplas numéricas E,N,Z e os formatos UTM em metros
+  `Ponto,Norte,Este,Cota,Descrição` e `Ponto,Cota,Descrição,Norte,Este`, inclusive
+  com campos vazios e vírgula ao final. Também aceita as variantes com Este antes
+  de Norte. A sugestão UTM exige Este entre 100.000 e 900.000, Norte acima de
+  1.000.000 até 10.000.000 e cota entre -12.000 e 12.000 em até 32 registros.
+  Confira sempre colunas e unidade; formatos não reconhecidos exigem configuração
+  manual. Arquivos reconhecidos sem cabeçalho mantêm o primeiro ponto.
+  Exemplo `19 SETOR.CSV`: separador **vírgula**, **sem cabeçalho**, colunas
+  **Este = 5**, **Norte = 4**, **Elevação = 2**, unidade **metros**.
 - Grade XY de 1 mm com arredondamento equivalente a `Math.Round(double, 3)`.
   A primeira cota é mantida: diferenças até 1 mm são duplicados; maiores são
   avisos aceitos. Não se calcula média. Erros de leitura/geometria bloqueiam a criação.
@@ -128,6 +187,28 @@ desativa um complemento C# previamente instalado.
 
 ## Pisos sobre o terreno
 
+- **Pisos pelo CSV/TXT:** leia o arquivo na aba Origem e, em Conferência, marque
+  **Criar pisos por layers do CSV ou DWG junto com o terreno**. Escolha a origem
+  **Layers do CSV/TXT do levantamento**, informe a coluna de layer e clique em
+  **Identificar áreas de piso**. Marque os layers desejados, escolha o tipo de cada
+  piso e o nível. Não é necessário vincular um DWG para essa opção.
+- O CSV usa as mesmas colunas E/N/Z, separador, cabeçalho e unidade do terreno.
+  Cabeçalhos `Layer`/`Camada` e `Contorno`/`Contour`/`Polígono` são reconhecidos ao
+  escolher o arquivo. Sem cabeçalho, informe os números das colunas manualmente.
+  Cada grupo de vértices deve seguir a ordem do perímetro; o último é conectado
+  ao primeiro, podendo também repetir o primeiro vértice no final. Não se calcula
+  um limite convexo para os pisos. Uma nuvem de pontos sem ordem não é suficiente.
+- Sem coluna de contorno, cada layer forma um contorno. Para áreas separadas ou
+  furos no mesmo layer, use IDs distintos na coluna opcional de contorno. Furos
+  são reconhecidos pela posição dentro de outro contorno do mesmo layer. Contornos
+  cruzados, degenerados ou em contato invalidam a camada; linhas com coordenadas
+  ou agrupamentos inválidos bloqueiam a leitura dos pisos para evitar perder vértices.
+- Exemplo: [`samples/pisos_layers.csv`](samples/pisos_layers.csv), com colunas
+  `E;N;Z;Layer;Contorno`, dois layers e um furo. Os vértices também formam o terreno
+  pelo fluxo existente. Cotas Z dos contornos definem o topo dos pisos; contornos
+  inteiramente em Z=0 usam a superfície do terreno. As coordenadas CSV seguem a
+  mesma referência compartilhada do levantamento. O arquivo é relido antes da
+  criação e alterações nos contornos selecionados exigem nova conferência.
 - Cria elementos nativos **Piso**, um por área fechada, com o tipo e nível escolhidos.
   O material vem da estrutura composta do tipo; o plugin não modifica tipos existentes.
 - Lê polilinhas fechadas e reúne curvas conectadas do mesmo layer, inclusive em

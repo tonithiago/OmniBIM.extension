@@ -85,6 +85,49 @@ def geographic_settings(doc, settings):
                 East=east, North=north, Elevation=elevation, Datum=settings['Datum'])
 
 
+def automatic_utm_settings(doc, analysis, settings):
+    """Repair an invalid site origin from an already-UTM survey, without reprojection.
+
+    Zone and hemisphere remain explicitly declared by the user: E/N alone do
+    not identify a CRS. Never interpret Revit's default city as survey control.
+    Returns a new settings dictionary, or None if no repair is needed.
+    """
+    if settings.get('GeographicMode', 'utm') != 'utm':
+        return None
+    try:
+        geographic_settings(doc, settings)
+        return None
+    except geo.InvalidUtmCoordinates:
+        pass
+    core.validate_analysis(analysis)
+    # Checking the envelope also rejects a mixed local/UTM point cloud.
+    east = [p.E for p in analysis.points]
+    north = [p.N for p in analysis.points]
+    try:
+        for e in (min(east), max(east)):
+            for n in (min(north), max(north)):
+                geo.utm_to_latlon(e, n, settings['Zone'], settings['Hemisphere'], settings['Datum'])
+    except geo.InvalidUtmCoordinates as error:
+        raise geo.InvalidUtmCoordinates(
+            'Não foi possível recuperar UTM do levantamento. Confira as coordenadas originais (WCS) do DWG, '
+            'a unidade, a zona e o hemisfério. Coordenadas locais precisam de uma referência geográfica conhecida.\n'
+            'Faixa lida (m): E {0:.3f} a {1:.3f}; N {2:.3f} a {3:.3f}.\n{4}'.format(
+                float(min(east)), float(max(east)), float(min(north)), float(max(north)), core.text_type(error)))
+    # The mean of hull vertices is inside the terrain, unlike a bounding-box
+    # centre, so the base points can be placed on its upper surface.
+    boundary = core.hull(analysis.points)
+    anchor_e = sum(p.E for p in boundary) / len(boundary)
+    anchor_n = sum(p.N for p in boundary) / len(boundary)
+    current = internal_to_shared(doc.ActiveProjectLocation).Origin
+    previous = ([settings['East'], settings['North'], settings['Elevation']]
+                if settings['NewLocation'] else [metres(current.X), metres(current.Y), metres(current.Z)])
+    repaired = dict(settings, NewLocation=True, East=anchor_e, North=anchor_n, Elevation=previous[2])
+    repaired['AutomaticUtm'] = dict(Source='Survey UTM', PreviousOriginMetres=previous,
+                                    OriginMetres=[anchor_e, anchor_n, previous[2]], Reprojection=False)
+    geographic_settings(doc, repaired)
+    return repaired
+
+
 def use_default_location(doc, settings):
     """Replace the default site's coordinates, without accumulating new sites."""
     previous = doc.ActiveProjectLocation
@@ -189,13 +232,73 @@ def set_site_geography(doc, geographic):
     return geographic
 
 
+def cad_to_original_feet(cad):
+    """Recover the linked DWG's real WCS, including Revit's hidden recentering.
+
+    Large CAD coordinates can be baked into local symbol geometry with an
+    identity instance transform. AcquireCoordinates understands that offset;
+    GetTransform().Inverse does not. Copy the frame, then ALWAYS roll back.
+    """
+    if not cad.IsLinked:
+        return cad_placement_to_original_feet(cad)
+    doc = cad.Document
+    last_error = None
+    for retry in (False, True):
+        transaction = (DB.SubTransaction(doc) if doc.IsModifiable else
+                       DB.Transaction(doc, 'TOPOBIM - ler referência DWG (reverter)'))
+        try:
+            if transaction.Start() != DB.TransactionStatus.Started:
+                raise ValueError('Não foi possível iniciar a leitura da referência do DWG.')
+            if retry:
+                # Revit remembers a prior acquisition, even after the host's
+                # position changes. Clear that association ONLY inside this
+                # rollback-only transaction, then acquire the actual WCS again.
+                doc.ResetSharedCoordinates()
+                doc.Regenerate()
+            doc.AcquireCoordinates(cad.Id)
+            doc.Regenerate()
+            # This independent transform remains valid after rollback.
+            return internal_to_shared(doc.ActiveProjectLocation)
+        except Exception as error:
+            last_error = core.text_type(error)
+        finally:
+            try:
+                if transaction.GetStatus() == DB.TransactionStatus.Started:
+                    if transaction.RollBack() != DB.TransactionStatus.RolledBack:
+                        raise ValueError('O Revit não reverteu a leitura temporária da referência do DWG.')
+            finally:
+                transaction.Dispose()
+    raise ValueError('Não foi possível adquirir a referência original do DWG vinculado. '
+                     'Confira se o vínculo está carregado e possui uma única instância.\n' + last_error)
+
+
+def cad_placement_to_original_feet(cad):
+    """Remove CAD placement while retaining its drawing-unit-to-feet scale.
+
+    ImportInstance.GetTransform can include uniform scale, not just placement.
+    Inverting it directly discards that scale and then metres() converts the
+    unscaled drawing values as if they were feet (e.g. metre DWGs shrink 0.3048).
+    Keep scale in the geometry; remove only translation, orientation/reflection.
+    """
+    imported = cad.GetTransform()
+    scale = imported.Scale
+    if not core.finite(scale) or scale <= 0:
+        raise ValueError('O DWG tem uma escala de importação inválida.')
+    placement = DB.Transform.Identity
+    placement.Origin = imported.Origin
+    for axis in ('BasisX', 'BasisY', 'BasisZ'):
+        basis = getattr(imported, axis)
+        setattr(placement, axis, DB.XYZ(basis.X/scale, basis.Y/scale, basis.Z/scale))
+    return placement.Inverse
+
+
 def read_cad(doc, element_id, original_coordinates=True):
     cad = doc.GetElement(element_id)
     if not isinstance(cad, DB.ImportInstance):
         raise ValueError('Selecione um DWG do projeto.')
     if cad.ViewSpecific:
         raise ValueError("O DWG está restrito à vista. Vincule-o com 'Somente vista atual' desmarcado.")
-    transform_out = (cad.GetTransform().Inverse if original_coordinates
+    transform_out = (cad_to_original_feet(cad) if original_coordinates
                      else internal_to_shared(doc.ActiveProjectLocation))
     output = []
 
@@ -400,6 +503,7 @@ def create(doc, analysis, type_id, level_id, settings, source, floor_settings=No
         raise ValueError('Hemisfério inválido.')
     if not all(core.finite(settings[k]) for k in ('East', 'North', 'Elevation')):
         raise ValueError('Coordenada de origem não finita.')
+    settings = automatic_utm_settings(doc, analysis, settings) or settings
     geographic = geographic_settings(doc, settings)
     if floor_settings:
         import topobim_floors

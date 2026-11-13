@@ -28,11 +28,16 @@ class Transform(object):
         return result
 
     @property
+    def Scale(self):
+        return self.BasisX.GetLength()
+
+    @property
     def Inverse(self):
         result=Transform()
-        result.BasisX=XYZ(self.BasisX.X,self.BasisY.X,self.BasisZ.X)
-        result.BasisY=XYZ(self.BasisX.Y,self.BasisY.Y,self.BasisZ.Y)
-        result.BasisZ=XYZ(self.BasisX.Z,self.BasisY.Z,self.BasisZ.Z)
+        square=self.Scale**2
+        result.BasisX=XYZ(self.BasisX.X/square,self.BasisY.X/square,self.BasisZ.X/square)
+        result.BasisY=XYZ(self.BasisX.Y/square,self.BasisY.Y/square,self.BasisZ.Y/square)
+        result.BasisZ=XYZ(self.BasisX.Z/square,self.BasisY.Z/square,self.BasisZ.Z/square)
         result.Origin=result.OfVector(XYZ(-self.Origin.X,-self.Origin.Y,-self.Origin.Z))
         return result
 
@@ -65,6 +70,7 @@ class Instance(object):
 
 class Cad(object):
     ViewSpecific=False
+    IsLinked=False
     def __init__(self,geometry,transform):
         self.geometry,self.transform=Geometry(geometry),transform
     def get_Geometry(self,options):
@@ -122,6 +128,35 @@ class FloorAdapterTests(unittest.TestCase):
         self.assertAlmostEqual(3*0.3048,p.N)
         self.assertAlmostEqual(0,p.Z)
 
+    def test_dwg_utm_units_survive_removal_of_rotated_placement(self):
+        # DWG symbol coordinates are in drawing units; the root transform can
+        # include the conversion to Revit feet as well as rotation/translation.
+        expected = [(303400,9883900,5), (303410,9883900,6),
+                    (303410,9883910,7), (303400,9883910,8), (303400,9883900,5)]
+        for metres_per_unit in (1.0, 0.001, 0.01, 0.3048):
+            scale = metres_per_unit / 0.3048
+            placement = Transform(12345, -765432, 40)
+            placement.BasisX, placement.BasisY, placement.BasisZ = XYZ(0,scale,0), XYZ(-scale,0,0), XYZ(0,0,scale)
+            self.path.points = [XYZ(e/metres_per_unit,n/metres_per_unit,z/metres_per_unit) for e,n,z in expected]
+            root = Instance([self.path], placement)
+            root.GraphicsStyleId = 100
+            self.cad.geometry = Geometry([root])
+            self.cad.transform = placement
+            rows = floors.service.read_cad(self.doc,1,True)
+            for row, wanted in zip(rows,expected):
+                self.assertEqual('PISO',row.layer)
+                for actual,value in zip(row.point,wanted):
+                    self.assertAlmostEqual(value,actual,places=6)
+            areas,issues = floors.read_areas(self.doc,1,True)
+            self.assertFalse(issues)
+            self.assertAlmostEqual(100,floors.geom.region_area(areas['PISO'][0]),places=5)
+            self.assertTrue(areas.elevated_regions['PISO'][0])
+            # Original and shared modes must agree on physical dimensions.
+            shared = floors.service.read_cad(self.doc,1,False)
+            self.assertAlmostEqual(10, ((shared[1].point.E-shared[0].point.E)**2 +
+                                       (shared[1].point.N-shared[0].point.N)**2)**0.5,places=6)
+            self.assertAlmostEqual(1,shared[1].point.Z-shared[0].point.Z,places=6)
+
     def test_current_mode_includes_rotation_translation_shared_vertical(self):
         areas,issues=floors.read_areas(self.doc,1,False)
         model=self.cad.transform.OfPoint(XYZ(2,3,0))
@@ -129,6 +164,24 @@ class FloorAdapterTests(unittest.TestCase):
         p=areas['PISO'][0].outer[0]
         for value,actual in zip((expected.X,expected.Y,expected.Z),(p.E,p.N,p.Z)):
             self.assertAlmostEqual(value*0.3048,actual)
+
+    def test_original_units_keep_nested_block_scale_and_reflection(self):
+        scale = 1/0.3048
+        placement = Transform(100,200,5)
+        placement.BasisX,placement.BasisY,placement.BasisZ = XYZ(-scale,0,0),XYZ(0,scale,0),XYZ(0,0,scale)
+        nested = Transform(303400,9883900,3)
+        nested.BasisX,nested.BasisY,nested.BasisZ = XYZ(2,0,0),XYZ(0,2,0),XYZ(0,0,2)
+        self.path.points = [XYZ(x,y,1) for x,y in [(0,0),(10,0),(10,10),(0,10),(0,0)]]
+        root = Instance([Instance([self.path],nested)],placement)
+        root.GraphicsStyleId = 100
+        self.cad.geometry,self.cad.transform = Geometry([root]),placement
+        rows = floors.service.read_cad(self.doc,1,True)
+        self.assertAlmostEqual(303400,rows[0].point.E,places=6)
+        self.assertAlmostEqual(9883900,rows[0].point.N,places=6)
+        self.assertAlmostEqual(5,rows[0].point.Z,places=6)
+        self.assertAlmostEqual(20,rows[1].point.E-rows[0].point.E,places=6)
+        areas,_ = floors.read_areas(self.doc,1,True)
+        self.assertAlmostEqual(400,floors.geom.region_area(areas['PISO'][0]),places=5)
 
     def test_view_specific_and_missing_geometry_rejected(self):
         self.cad.ViewSpecific=True

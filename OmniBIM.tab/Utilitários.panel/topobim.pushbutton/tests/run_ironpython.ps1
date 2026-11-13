@@ -4,14 +4,19 @@ param(
     [string]$RenderDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
-# Uses pyRevit's .NET Framework engine for isolated tests; no Revit model is opened.
-$engineDirectory = Join-Path $PyRevitRoot 'bin/netfx/engines/IPY2712PR'
+# Windows PowerShell tests netfx; PowerShell 7 tests netcore (as in Revit 2026).
+# Both use a simulated host; no Revit model is opened.
+$runtimeFolder = if ($PSVersionTable.PSEdition -eq 'Core') { 'netcore' } else { 'netfx' }
+$engineDirectory = Join-Path $PyRevitRoot "bin/$runtimeFolder/engines/IPY2712PR"
 foreach ($assemblyName in @('pyRevitLabs.Microsoft.Scripting.dll', 'pyRevitLabs.Microsoft.Dynamic.dll',
                             'pyRevitLabs.IronPython.dll', 'pyRevitLabs.IronPython.Modules.dll',
                             'pyRevitLabs.IronPython.Wpf.dll')) {
     [void][Reflection.Assembly]::LoadFrom((Join-Path $engineDirectory $assemblyName))
 }
-$engine = [IronPython.Hosting.Python]::CreateEngine()
+$engineOptions = New-Object 'System.Collections.Generic.Dictionary[string,object]'
+$engineOptions.Add('LightweightScopes', $true)
+$engineOptions.Add('RecursionLimit', 1000)
+$engine = [IronPython.Hosting.Python]::CreateEngine($engineOptions)
 $paths = $engine.GetSearchPaths()
 $paths.Add((Resolve-Path -LiteralPath $StandardLibrary).Path)
 $paths.Add($PSScriptRoot)
@@ -23,6 +28,9 @@ if ($RenderDirectory) {
     $scope.SetVariable('QA_OUTPUT', (Resolve-Path -LiteralPath $RenderDirectory).Path)
 }
 $scope.SetVariable('TEST_DIRECTORY', $PSScriptRoot)
+# Run first, before the ordinary suite warms/JIT-compiles the parsing functions.
+$scope.SetVariable('STACK_TEST_FILE', (Join-Path $PSScriptRoot 'verify_floor_csv_stack.py'))
+$engine.Execute('execfile(STACK_TEST_FILE, dict(globals(), __file__=STACK_TEST_FILE))', $scope)
 $engine.Execute('import unittest; result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(TEST_DIRECTORY)); assert result.wasSuccessful()', $scope)
 $scope.SetVariable('WPF_TEST_FILE', (Join-Path $PSScriptRoot 'verify_wpf.py'))
 $engine.Execute(@'

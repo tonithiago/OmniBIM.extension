@@ -18,7 +18,7 @@ if ($sourcePath -eq $destinationPath) {
 $runtimeFiles = @('script.py', 'bundle.yaml', 'TopoBim.xaml', 'Occurrences.xaml',
                   'TopoBimTheme.xaml',
                   'topobim_core.py', 'topobim_geo.py', 'topobim_revit.py', 'topobim_ui.py',
-                  'topobim_floor_geometry.py', 'topobim_floors.py', 'topobim_preview.py', 'topobim_view3d.py',
+                  'topobim_floor_geometry.py', 'topobim_floor_csv.py', 'topobim_floors.py', 'topobim_preview.py', 'topobim_view3d.py',
                   'topobim_measure.py', 'topobim_measure_ui.py',
                   'icon.png', 'icon.dark.png', 'README.md')
 foreach ($fileName in $runtimeFiles) {

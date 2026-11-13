@@ -45,7 +45,7 @@
               <StackPanel><TextBlock Text="Coluna Norte (Y)"/><TextBox x:Name="NorthColumn" Text="2"/></StackPanel>
               <StackPanel><TextBlock Text="Coluna Elevação (Z)"/><TextBox x:Name="ZColumn" Text="3"/></StackPanel>
             </UniformGrid>
-            <TextBlock Text="Colunas começam em 1. Decimal com vírgula exige separador ; ou tabulação. Não use separadores de milhar. Arquivo em UTF-8." Foreground="{StaticResource SecondaryBrush}"/>
+            <TextBlock Text="Colunas começam em 1. Aceita ponto decimal com separador vírgula, ; ou tabulação. Decimal com vírgula exige ; ou tabulação. Não use separadores de milhar. UTF-8 ou Windows-1252 (ANSI)." Foreground="{StaticResource SecondaryBrush}" TextWrapping="Wrap"/>
           </StackPanel>
           <StackPanel x:Name="CadPanel" Visibility="Collapsed">
             <TextBlock Text="Vincule ou importe o DWG no projeto antes de abrir o TOPOBIM, sem restringi-lo à vista atual."/>
@@ -114,6 +114,7 @@
               </UniformGrid>
               <StackPanel x:Name="LayerPanel" Visibility="Collapsed">
                 <TextBlock Text="Camadas de origem" FontWeight="SemiBold"/>
+                <TextBlock x:Name="CadReadSummary" TextWrapping="Wrap" Margin="0,4,0,4"/>
                 <ListBox x:Name="Layers" SelectionMode="Multiple" Height="150">
                   <ListBox.ItemTemplate><DataTemplate><CheckBox Content="{Binding}" Margin="2" IsChecked="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}, Mode=TwoWay}"/></DataTemplate></ListBox.ItemTemplate>
                 </ListBox>
@@ -161,12 +162,24 @@
             </Grid>
           </Border>
           <TextBlock Text="Limite convexo: divisas côncavas, furos, linhas de quebra e triangulação original não são preservados." Foreground="{StaticResource SecondaryBrush}"/>
-          <CheckBox x:Name="CreateFloors" Content="Criar pisos nas áreas fechadas do DWG junto com o terreno" FontWeight="SemiBold"/>
+          <CheckBox x:Name="CreateFloors" Content="Criar pisos por layers do CSV ou DWG junto com o terreno" FontWeight="SemiBold"/>
           <StackPanel x:Name="FloorPanel" Visibility="Collapsed">
+            <TextBlock Text="Origem dos contornos de piso"/>
+            <ComboBox x:Name="FloorSource" SelectedIndex="0"><ComboBoxItem Content="Layers de um DWG vinculado"/><ComboBoxItem Content="Layers do CSV/TXT do levantamento"/></ComboBox>
+            <StackPanel x:Name="FloorCsvPanel" Visibility="Collapsed">
+              <TextBlock Text="Usa o arquivo, as colunas E/N/Z, o separador e a unidade configurados na aba Origem. Informe os números das colunas abaixo (começando em 1)." TextWrapping="Wrap"/>
+              <UniformGrid Columns="2">
+                <StackPanel><TextBlock Text="Coluna do layer / camada"/><TextBox x:Name="FloorLayerColumn"/></StackPanel>
+                <StackPanel><TextBlock Text="Coluna do contorno (opcional)"/><TextBox x:Name="FloorContourColumn"/></StackPanel>
+              </UniformGrid>
+              <TextBlock Text="Os vértices de cada contorno devem estar em sequência no CSV; o último é ligado ao primeiro. Sem coluna de contorno, cada layer forma um único contorno. Para várias áreas ou furos no mesmo layer, use um identificador diferente por contorno. Uma nuvem de pontos sem ordem não define um piso." TextWrapping="Wrap" Foreground="{StaticResource SecondaryBrush}"/>
+            </StackPanel>
+            <StackPanel x:Name="FloorDwgPanel">
             <TextBlock Text="Selecione o DWG das áreas de piso. Os contornos podem ser côncavos e conter furos. Marque apenas os layers que representam pisos."/>
             <ComboBox x:Name="FloorCad" DisplayMemberPath="Label"/>
             <ComboBox x:Name="FloorCoordinates" SelectedIndex="2"><ComboBoxItem Content="Manual: WCS original compatível com o levantamento"/><ComboBoxItem Content="Manual: manter posição atual do vínculo no projeto"/><ComboBoxItem Content="Georreferenciar pelos vértices comuns do levantamento — recomendado"/></ComboBox>
             <TextBlock Text="A posição do DWG no projeto preserva o local onde ele está vinculado, mesmo ao redefinir Terreno Padrão. O modo WCS usa as coordenadas originais do arquivo e pode colocar pisos longe do terreno se o DWG usar uma origem local." Foreground="{StaticResource SecondaryBrush}"/>
+            </StackPanel>
             <Button x:Name="FindFloors" Content="Identificar áreas de piso" HorizontalAlignment="Left"/>
             <TextBlock x:Name="FloorSummary" Text="Identifique os contornos e escolha o tipo de piso de cada layer."/>
             <DataGrid x:Name="FloorTable" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" MaxHeight="250" MinHeight="95" HeadersVisibility="Column">
@@ -184,7 +197,7 @@
             </DataGrid>
             <TextBlock Text="Nível de referência dos pisos"/>
             <ComboBox x:Name="FloorLevel" DisplayMemberPath="Label"/>
-            <TextBlock Text="O topo do piso recebe as cotas Z dos contornos DWG quando houver elevação; contornos em Z=0 usam as cotas do terreno. A base pode ser reta em tipos com camada variável. O piso escava o sólido onde houver interseção. Trechos externos são permitidos. Nível e deslocamento são calculados; materiais e espessura nominal seguem o tipo escolhido. Curvas do DWG são aproximadas por segmentos." Foreground="{StaticResource SecondaryBrush}"/>
+            <TextBlock Text="O topo do piso recebe as cotas Z dos contornos CSV ou DWG quando houver elevação; contornos em Z=0 usam as cotas do terreno. A base pode ser reta em tipos com camada variável. O piso escava o sólido onde houver interseção. Trechos externos são permitidos. Nível e deslocamento são calculados; materiais e espessura nominal seguem o tipo escolhido. Curvas do DWG são aproximadas por segmentos." Foreground="{StaticResource SecondaryBrush}"/>
             <TextBlock x:Name="FloorIssues" Foreground="{StaticResource SecondaryBrush}"/>
           </StackPanel>
           <UniformGrid Columns="3">

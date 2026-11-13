@@ -75,6 +75,87 @@ class SurveyTests(unittest.TestCase):
         self.assertEqual([core.Point(10, 20, 30)], result.points)
         self.assertIsNone(core.detect_columns(self.source('1;2;3')))
 
+    def test_survey_encodings_preserve_accents_and_column_detection(self):
+        for encoding in ('utf-8', 'utf-8-sig', 'cp1252'):
+            path = self.source('\nPONTO;ESTE;NORTE;ELEVAÇÃO\n'
+                               'Estação;10;20;30\n'
+                               'Marco;inválido;20;30\n', encoding)
+            self.assertEqual((';', [1, 2, 3]), core.detect_columns(path))
+            result = core.read_points(path, columns=(1, 2, 3))
+            self.assertEqual([core.Point(10, 20, 30)], result.points)
+            self.assertEqual(['Linha 4: Número inválido: inválido'], result.errors)
+
+    def test_detect_format_header_and_existing_semicolon_decimals(self):
+        for separator in (';', ',', '\t'):
+            path = self.source(separator.join(('PONTO', 'Z', 'N', 'E')) + '\n' +
+                               separator.join(('A', '20.5', '9845213.791', '784842.009')))
+            detected = core.detect_format(path)
+            self.assertEqual((separator, [3, 2, 1], True), detected)
+            result = core.read_points(path, *detected)
+            self.assertEqual([], result.errors)
+            self.assertEqual([core.Point(784842.009, 9845213.791, 20.5)], result.points)
+        path = self.source('1,25;2,5;3,75\n4,25;5,5;6,75\n')
+        detected = core.detect_format(path)
+        self.assertEqual((';', [0, 1, 2], False), detected)
+        self.assertEqual([core.Point(1.25, 2.5, 3.75), core.Point(4.25, 5.5, 6.75)],
+                         core.read_points(path, *detected).points)
+
+    def test_detect_headerless_sector_export_keeps_first_point(self):
+        for separator, decimal in ((',', '.'), (';', '.'), (';', ','), ('\t', '.')):
+            rows = [('JS4', '20.272', '', '9845213.7910', '784842.0090', ''),
+                    ('V1', '20.256', '', '9845226.7744', '784851.2066', ''),
+                    ('1', '19.882', 'PT', '9845250.3357', '784841.6984', '')]
+            path = self.source('\n'.join(separator.join(v.replace('.', decimal) for v in row)
+                                         for row in rows))
+            detected = core.detect_format(path)
+            self.assertEqual((separator, [4, 3, 1], False), detected)
+            result = core.read_points(path, *detected)
+            self.assertEqual([], result.errors)
+            self.assertEqual(3, len(result.points))
+            self.assertEqual(core.Point(784842.009, 9845213.791, 20.272), result.points[0])
+            self.assertEqual(core.Point(784841.6984, 9845250.3357, 19.882), result.points[-1])
+
+    def test_detect_headerless_screenshot_export(self):
+        path = self.source('JS1,9852066.2330,791133.7060,17.698,,\n'
+                           'B1,9852060.9818,791129.5874,16.399,,\n'
+                           '1,9852096.1382,791146.7796,17.947,PN,\n', 'utf-8-sig')
+        detected = core.detect_format(path)
+        self.assertEqual((',', [2, 1, 3], False), detected)
+        result = core.read_points(path, *detected)
+        self.assertEqual([], result.errors)
+        self.assertEqual(3, len(result.points))
+        self.assertEqual(core.Point(791133.706, 9852066.233, 17.698), result.points[0])
+
+    def test_format_unknown_layout_requires_manual_columns(self):
+        for content in ('ID,A,B,C\n1,2,3,4',
+                        '1,20,30,40,',
+                        '1,20,PT,9845213,784842,\n2,20,PT,100,200,'):
+            self.assertEqual((',', None, None), core.detect_format(self.source(content)))
+        for content in ('', '\n\n', '1.2.3', '"1,2,3', '1,2,3\n4,5'):
+            self.assertIsNone(core.detect_format(self.source(content)))
+
+    def test_detect_format_quotes_encoding_and_trailing_fields(self):
+        path = self.source('"Estação, A";"20,272";"Descrição; marco";"9845213,791";"784842,009";\n',
+                           'cp1252')
+        detected = core.detect_format(path)
+        self.assertEqual((';', [4, 3, 1], False), detected)
+        self.assertEqual([core.Point(784842.009, 9845213.791, 20.272)],
+                         core.read_points(path, *detected).points)
+
+    def test_windows1252_accent_after_first_chunk(self):
+        path = self.source('1;2;3;Marco\n' * 7000 + '4;5;6;Estação “A”\n', 'cp1252')
+        result = core.read_points(path, header=False)
+        self.assertEqual([], result.errors)
+        self.assertEqual(7001, len(result.points))
+        self.assertEqual(core.Point(4, 5, 6), result.points[-1])
+
+    def test_utf8_multibyte_character_at_chunk_boundary(self):
+        prefix = 'E;N;Z\n1;2;'
+        path = self.source(prefix + ' ' * (65535 - len(prefix)) + 'ação\n')
+        result = core.read_points(path)
+        self.assertEqual([], result.points)
+        self.assertEqual(['Linha 2: Número inválido: ação'], result.errors)
+
     def test_reject_ambiguous_and_nonfinite_numbers(self):
         for text in ('1,234.5', '1.234,5', 'nan', 'NaN', 'Infinity', '1e999', '1_000', '1 000', '', '--1'):
             self.assertRaises(ValueError, core.number, text)
